@@ -21,7 +21,10 @@
 
 package org.apache.bookkeeper.bookie;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Stopwatch;
+import com.google.common.util.concurrent.RateLimiter;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -35,11 +38,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.util.concurrent.RateLimiter;
-
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.bookkeeper.bookie.EntryLogger.EntryLogScanner;
 import org.apache.bookkeeper.bookie.GarbageCollector.GarbageCleaner;
 import org.apache.bookkeeper.conf.ServerConfiguration;
@@ -170,7 +168,9 @@ public class GarbageCollectorThread extends SafeRunnable {
 
         void flush() throws IOException {
             if (offsets.isEmpty()) {
-                LOG.debug("Skipping entry log flushing, as there are no offset!");
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Skipping entry log flushing, as there are no offset!");
+                }
                 return;
             }
 
@@ -333,8 +333,7 @@ public class GarbageCollectorThread extends SafeRunnable {
         // gc inactive/deleted ledgers
         doGcLedgers();
 
-        Stopwatch scanStopwatch = new Stopwatch();
-        scanStopwatch.start();
+        Stopwatch scanStopwatch = Stopwatch.createStarted();
 
         LOG.debug("Scanning entry log files to extract metadata and delete empty entry logs if possible.");
         // Extract all of the ledger ID's that comprise all of the entry logs
@@ -346,7 +345,7 @@ public class GarbageCollectorThread extends SafeRunnable {
             return;
         }
 
-        long elapsedTimeOnScan = scanStopwatch.elapsedMillis();
+        long elapsedTimeOnScan = scanStopwatch.elapsed(TimeUnit.MILLISECONDS);
 
         if (elapsedTimeOnScan >= gcWaitTime) {
             LOG.debug("Garbage collecting deleted ledgers' index files again just in case ledgers deleted during scanning.");
@@ -519,11 +518,9 @@ public class GarbageCollectorThread extends SafeRunnable {
             // Wait till the thread stops compacting
             Thread.sleep(100);
         }
-        gcExecutor.shutdown();
-        if (gcExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
-            LOG.warn("GC executor did not shut down in 60 seconds. Killing");
-            gcExecutor.shutdownNow();
-        }
+
+        // Interrupt GC executor thread
+        gcExecutor.shutdownNow();
     }
 
     /**

@@ -21,8 +21,8 @@ package org.apache.bookkeeper.proto;
  *
  */
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import java.nio.ByteBuffer;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.bookkeeper.proto.BookkeeperProtocol.AuthMessage;
 
@@ -69,18 +69,8 @@ public interface BookieProtocol {
      * and just had an int representing the opCode as the 
      * first int. This handles that case also. 
      */
-    static class PacketHeader {
-        final byte version;
-        final byte opCode;
-        final short flags;
-
-        public PacketHeader(byte version, byte opCode, short flags) {
-            this.version = version;
-            this.opCode = opCode;
-            this.flags = flags;
-        }
-        
-        int toInt() {
+    final static class PacketHeader {
+        public static int toInt(byte version, byte opCode, short flags) {
             if (version == 0) {
                 return (int)opCode;
             } else {
@@ -90,29 +80,26 @@ public interface BookieProtocol {
             }
         }
 
-        static PacketHeader fromInt(int i) {
-            byte version = (byte)(i >> 24); 
-            byte opCode = 0;
-            short flags = 0;
+        public static byte getVersion(int packetHeader) {
+            return (byte)(packetHeader >> 24);
+        }
+
+        public static byte getOpCode(int packetHeader) {
+            int version = getVersion(packetHeader);
             if (version == 0) {
-                opCode = (byte)i;
+                return (byte) packetHeader;
             } else {
-                opCode = (byte)((i >> 16) & 0xFF);
-                flags = (short)(i & 0xFFFF);
+                return (byte)((packetHeader >> 16) & 0xFF);
             }
-            return new PacketHeader(version, opCode, flags);
         }
 
-        byte getVersion() {
-            return version;
-        }
-
-        byte getOpCode() {
-            return opCode;
-        }
-
-        short getFlags() {
-            return flags;
+        public static short getFlags(int packetHeader) {
+            byte version = (byte)(packetHeader >> 24);
+            if (version == 0) {
+                return 0;
+            } else {
+                return (short)(packetHeader & 0xFFFF);
+            }
         }
     }
 
@@ -249,24 +236,24 @@ public interface BookieProtocol {
     }
 
     static class AddRequest extends Request {
-        final ChannelBuffer data;
+        final ByteBuf data;
 
         AddRequest(byte protocolVersion, long ledgerId, long entryId,
-                   short flags, byte[] masterKey, ChannelBuffer data) {
+                   short flags, byte[] masterKey, ByteBuf data) {
             super(protocolVersion, ADDENTRY, ledgerId, entryId, flags, masterKey);
-            this.data = data;
+            this.data = data.retain();
         }
 
-        ChannelBuffer getData() {
+        ByteBuf getData() {
             return data;
-        }
-
-        ByteBuffer getDataAsByteBuffer() {
-            return data.toByteBuffer().slice();
         }
 
         boolean isRecoveryAdd() {
             return (flags & FLAG_RECOVERY_ADD) == FLAG_RECOVERY_ADD;
+        }
+
+        void release() {
+            data.release();
         }
     }
 
@@ -342,14 +329,14 @@ public interface BookieProtocol {
     }
 
     static class ReadResponse extends Response {
-        final ChannelBuffer data;
+        final ByteBuf data;
 
         ReadResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId) {
             super(protocolVersion, READENTRY, errorCode, ledgerId, entryId);
-            this.data = null;
+            this.data = Unpooled.EMPTY_BUFFER;
         }
 
-        ReadResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId, ChannelBuffer data) {
+        ReadResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId, ByteBuf data) {
             super(protocolVersion, READENTRY, errorCode, ledgerId, entryId);
             this.data = data;
         }
@@ -358,7 +345,7 @@ public interface BookieProtocol {
             return data != null;
         }
 
-        ChannelBuffer getData() {
+        ByteBuf getData() {
             return data;
         }
     }
@@ -366,6 +353,13 @@ public interface BookieProtocol {
     static class AddResponse extends Response {
         AddResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId) {
             super(protocolVersion, ADDENTRY, errorCode, ledgerId, entryId);
+        }
+    }
+    
+    static class ErrorResponse extends Response {
+        ErrorResponse(byte protocolVersion, byte opCode, int errorCode,
+                      long ledgerId, long entryId) {
+            super(protocolVersion, opCode, errorCode, ledgerId, entryId);
         }
     }
 

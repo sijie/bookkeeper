@@ -20,17 +20,25 @@
  */
 package org.apache.bookkeeper.client;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Optional;
+import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.util.HashedWheelTimer;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import com.google.common.base.Optional;
-import com.google.common.base.Preconditions;
 
 import org.apache.bookkeeper.client.AsyncCallback.CreateCallback;
 import org.apache.bookkeeper.client.AsyncCallback.DeleteCallback;
@@ -38,6 +46,7 @@ import org.apache.bookkeeper.client.AsyncCallback.OpenCallback;
 import org.apache.bookkeeper.client.AsyncCallback.IsClosedCallback;
 import org.apache.bookkeeper.client.BookieInfoReader.BookieInfo;
 import org.apache.bookkeeper.conf.ClientConfiguration;
+import org.apache.bookkeeper.feature.Feature;
 import org.apache.bookkeeper.feature.FeatureProvider;
 import org.apache.bookkeeper.feature.SettableFeatureProvider;
 import org.apache.bookkeeper.meta.CleanupLedgerManager;
@@ -57,18 +66,12 @@ import org.apache.bookkeeper.util.SafeRunnable;
 import org.apache.bookkeeper.zookeeper.BoundExponentialBackoffRetryPolicy;
 import org.apache.bookkeeper.zookeeper.ZooKeeperClient;
 import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.lang.SystemUtils;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
-import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.util.HashedWheelTimer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 /**
  * BookKeeper client. We assume there is one single writer to a ledger at any
@@ -82,28 +85,29 @@ import java.util.concurrent.ExecutionException;
  *
  *
  */
-
 public class BookKeeper implements AutoCloseable {
 
     static final Logger LOG = LoggerFactory.getLogger(BookKeeper.class);
 
     final ZooKeeper zk;
-    final ClientSocketChannelFactory channelFactory;
+    final EventLoopGroup eventLoopGroup;
 
     // The stats logger for this client.
     private final StatsLogger statsLogger;
     private OpStatsLogger createOpLogger;
     private OpStatsLogger openOpLogger;
     private OpStatsLogger deleteOpLogger;
+    private OpStatsLogger recoverOpLogger;
     private OpStatsLogger readOpLogger;
     private OpStatsLogger addOpLogger;
     private OpStatsLogger writeLacOpLogger;
     private OpStatsLogger readLacOpLogger;
+    private OpStatsLogger recoverAddEntriesStats;
+    private OpStatsLogger recoverReadEntriesStats;
 
-
-    // whether the socket factory is one we created, or is owned by whoever
+    // whether the event loop group is one we created, or is owned by whoever
     // instantiated us
-    boolean ownChannelFactory = false;
+    boolean ownEventLoopGroup = false;
     // whether the zk handle is one we created, or is owned by whoever
     // instantiated us
     boolean ownZKHandle = false;
@@ -116,7 +120,10 @@ public class BookKeeper implements AutoCloseable {
     final HashedWheelTimer requestTimer;
     final boolean ownTimer;
     final FeatureProvider featureProvider;
-    ScheduledExecutorService bookieInfoScheduler;
+    final ScheduledExecutorService bookieInfoScheduler;
+
+    // Features
+    final Feature disableEnsembleChangeFeature;
 
     // Ledger manager responsible for how to store ledger meta data
     final LedgerManagerFactory ledgerManagerFactory;
@@ -129,6 +136,9 @@ public class BookKeeper implements AutoCloseable {
 
     final ClientConfiguration conf;
     final int explicitLacInterval;
+    final boolean delayEnsembleChange;
+
+    final Optional<SpeculativeRequestExecutionPolicy> readSpeculativeRequestPolicy;
 
     // Close State
     boolean closed = false;
@@ -138,7 +148,7 @@ public class BookKeeper implements AutoCloseable {
         final ClientConfiguration conf;
 
         ZooKeeper zk = null;
-        ClientSocketChannelFactory channelFactory = null;
+        EventLoopGroup eventLoopGroup = null;
         StatsLogger statsLogger = NullStatsLogger.INSTANCE;
         DNSToSwitchMapping dnsResolver = null;
         HashedWheelTimer requestTimer = null;
@@ -148,8 +158,8 @@ public class BookKeeper implements AutoCloseable {
             this.conf = conf;
         }
 
-        public Builder setChannelFactory(ClientSocketChannelFactory f) {
-            channelFactory = f;
+        public Builder setEventLoopGroup(EventLoopGroup f) {
+            eventLoopGroup = f;
             return this;
         }
 
@@ -181,7 +191,7 @@ public class BookKeeper implements AutoCloseable {
 
         public BookKeeper build() throws IOException, InterruptedException, KeeperException {
             Preconditions.checkNotNull(statsLogger, "No stats logger provided");
-            return new BookKeeper(conf, zk, channelFactory, statsLogger, dnsResolver, requestTimer, featureProvider);
+            return new BookKeeper(conf, zk, eventLoopGroup, statsLogger, dnsResolver, requestTimer, featureProvider);
         }
     }
 
@@ -190,7 +200,7 @@ public class BookKeeper implements AutoCloseable {
     }
 
     /**
-     * Create a bookkeeper client. A zookeeper client and a client socket factory
+     * Create a bookkeeper client. A zookeeper client and a client event loop group
      * will be instantiated as part of this constructor.
      *
      * @param servers
@@ -209,7 +219,7 @@ public class BookKeeper implements AutoCloseable {
 
     /**
      * Create a bookkeeper client using a configuration object.
-     * A zookeeper client and a client socket factory will be
+     * A zookeeper client and a client event loop group will be
      * instantiated as part of this constructor.
      *
      * @param conf
@@ -229,10 +239,10 @@ public class BookKeeper implements AutoCloseable {
         return zk;
     }
 
-    private static ClientSocketChannelFactory validateChannelFactory(ClientSocketChannelFactory factory)
+    private static EventLoopGroup validateEventLoopGroup(EventLoopGroup eventLoopGroup)
             throws NullPointerException {
-        Preconditions.checkNotNull(factory, "No Channel Factory provided");
-        return factory;
+        Preconditions.checkNotNull(eventLoopGroup, "No Event Loop Group provided");
+        return eventLoopGroup;
     }
 
     /**
@@ -257,7 +267,7 @@ public class BookKeeper implements AutoCloseable {
 
     /**
      * Create a bookkeeper client but use the passed in zookeeper client and
-     * client socket channel factory instead of instantiating those.
+     * client event loop group instead of instantiating those.
      *
      * @param conf
      *          Client Configuration Object
@@ -266,15 +276,15 @@ public class BookKeeper implements AutoCloseable {
      *          Zookeeper client instance connected to the zookeeper with which
      *          the bookies have registered. The ZooKeeper client must be connected
      *          before it is passed to BookKeeper. Otherwise a KeeperException is thrown.
-     * @param channelFactory
-     *          A factory that will be used to create connections to the bookies
+     * @param eventLoopGroup
+     *          An event loop group that will be used to create connections to the bookies
      * @throws IOException
      * @throws InterruptedException
      * @throws KeeperException if the passed zk handle is not connected
      */
-    public BookKeeper(ClientConfiguration conf, ZooKeeper zk, ClientSocketChannelFactory channelFactory)
+    public BookKeeper(ClientConfiguration conf, ZooKeeper zk, EventLoopGroup eventLoopGroup)
             throws IOException, InterruptedException, KeeperException {
-        this(conf, validateZooKeeper(zk), validateChannelFactory(channelFactory), NullStatsLogger.INSTANCE,
+        this(conf, validateZooKeeper(zk), validateEventLoopGroup(eventLoopGroup), NullStatsLogger.INSTANCE,
                 null, null, null);
     }
 
@@ -283,13 +293,14 @@ public class BookKeeper implements AutoCloseable {
      */
     private BookKeeper(ClientConfiguration conf,
                        ZooKeeper zkc,
-                       ClientSocketChannelFactory channelFactory,
+                       EventLoopGroup eventLoopGroup,
                        StatsLogger statsLogger,
                        DNSToSwitchMapping dnsResolver,
                        HashedWheelTimer requestTimer,
                        FeatureProvider featureProvider)
             throws IOException, InterruptedException, KeeperException {
         this.conf = conf;
+        this.delayEnsembleChange = conf.getDelayEnsembleChange();
 
         // initialize zookeeper client
         if (zkc == null) {
@@ -310,18 +321,13 @@ public class BookKeeper implements AutoCloseable {
             this.ownZKHandle = false;
         }
 
-        // initialize channel factory
-        if (null == channelFactory) {
-            ThreadFactoryBuilder tfb = new ThreadFactoryBuilder();
-            this.channelFactory = new NioClientSocketChannelFactory(
-                    Executors.newCachedThreadPool(tfb.setNameFormat(
-                            "BookKeeper-NIOBoss-%d").build()),
-                    Executors.newCachedThreadPool(tfb.setNameFormat(
-                            "BookKeeper-NIOWorker-%d").build()));
-            this.ownChannelFactory = true;
+        // initialize event loop group
+        if (null == eventLoopGroup) {
+            this.eventLoopGroup = getDefaultEventLoopGroup();
+            this.ownEventLoopGroup = true;
         } else {
-            this.channelFactory = channelFactory;
-            this.ownChannelFactory = false;
+            this.eventLoopGroup = eventLoopGroup;
+            this.ownEventLoopGroup = false;
         }
 
         if (null == requestTimer) {
@@ -340,6 +346,9 @@ public class BookKeeper implements AutoCloseable {
         } else {
             this.featureProvider = featureProvider;
         }
+        
+        // get features
+        this.disableEnsembleChangeFeature = this.featureProvider.getFeature(conf.getDisableEnsembleChangeFeatureName());
 
         // initialize scheduler
         ThreadFactoryBuilder tfb = new ThreadFactoryBuilder().setNameFormat(
@@ -355,6 +364,16 @@ public class BookKeeper implements AutoCloseable {
         this.placementPolicy = initializeEnsemblePlacementPolicy(conf,
                 dnsResolver, this.requestTimer, this.featureProvider, this.statsLogger);
 
+        if (conf.getFirstSpeculativeReadTimeout() > 0) {
+            this.readSpeculativeRequestPolicy =
+                    Optional.of(new DefaultSpeculativeRequestExecutionPolicy(
+                        conf.getFirstSpeculativeReadTimeout(),
+                        conf.getMaxSpeculativeReadTimeout(),
+                        conf.getSpeculativeReadTimeoutBackoffMultiplier()));
+        } else {
+            this.readSpeculativeRequestPolicy = Optional.<SpeculativeRequestExecutionPolicy>absent();
+        }
+
         // initialize main worker pool
         this.mainWorkerPool = OrderedSafeExecutor.newBuilder()
                 .name("BookKeeperClientWorker")
@@ -365,7 +384,7 @@ public class BookKeeper implements AutoCloseable {
                 .build();
 
         // initialize bookie client
-        this.bookieClient = new BookieClient(conf, this.channelFactory, this.mainWorkerPool, statsLogger);
+        this.bookieClient = new BookieClient(conf, this.eventLoopGroup, this.mainWorkerPool, statsLogger);
         this.bookieWatcher = new BookieWatcher(conf, this.scheduler, this.placementPolicy, this);
         if (conf.getDiskWeightBasedPlacementEnabled()) {
             LOG.info("Weighted ledger placement enabled");
@@ -377,6 +396,7 @@ public class BookKeeper implements AutoCloseable {
             this.bookieInfoReader.start();
         } else {
             LOG.info("Weighted ledger placement is not enabled");
+            this.bookieInfoScheduler = null;
             this.bookieInfoReader = new BookieInfoReader(this, conf, null);
             this.bookieWatcher.readBookiesBlocking();
         }
@@ -386,7 +406,9 @@ public class BookKeeper implements AutoCloseable {
         this.ledgerManager = new CleanupLedgerManager(ledgerManagerFactory.newLedgerManager());
         this.ledgerIdGenerator = ledgerManagerFactory.newLedgerIdGenerator();
         this.explicitLacInterval = conf.getExplictLacInterval();
-        LOG.debug("Explicit LAC Interval : {}", this.explicitLacInterval);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Explicit LAC Interval : {}", this.explicitLacInterval);
+        }
 
         scheduleBookieHealthCheckIfEnabled();
     }
@@ -446,6 +468,11 @@ public class BookKeeper implements AutoCloseable {
         return ledgerManager;
     }
 
+    @VisibleForTesting
+    LedgerManager getUnderlyingLedgerManager() {
+        return ((CleanupLedgerManager) ledgerManager).getUnderlying();
+    }
+    
     LedgerIdGenerator getLedgerIdGenerator() {
         return ledgerIdGenerator;
     }
@@ -471,6 +498,10 @@ public class BookKeeper implements AutoCloseable {
 
     StatsLogger getStatsLogger() {
         return statsLogger;
+    }
+
+    public Optional<SpeculativeRequestExecutionPolicy> getReadSpeculativeRequestPolicy() {
+        return readSpeculativeRequestPolicy;
     }
 
     /**
@@ -1178,8 +1209,8 @@ public class BookKeeper implements AutoCloseable {
         if (ownTimer) {
             requestTimer.stop();
         }
-        if (ownChannelFactory) {
-            channelFactory.releaseExternalResources();
+        if (ownEventLoopGroup) {
+            eventLoopGroup.shutdownGracefully();
         }
         if (ownZKHandle) {
             zk.close();
@@ -1242,17 +1273,39 @@ public class BookKeeper implements AutoCloseable {
         createOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.CREATE_OP);
         deleteOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.DELETE_OP);
         openOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.OPEN_OP);
+        recoverOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.RECOVER_OP);
         readOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.READ_OP);
         addOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.ADD_OP);
         writeLacOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.WRITE_LAC_OP);
         readLacOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.READ_LAC_OP);
+        recoverAddEntriesStats = stats.getOpStatsLogger(BookKeeperClientStats.LEDGER_RECOVER_ADD_ENTRIES);
+        recoverReadEntriesStats = stats.getOpStatsLogger(BookKeeperClientStats.LEDGER_RECOVER_READ_ENTRIES);
     }
 
     OpStatsLogger getCreateOpLogger() { return createOpLogger; }
     OpStatsLogger getOpenOpLogger() { return openOpLogger; }
     OpStatsLogger getDeleteOpLogger() { return deleteOpLogger; }
+    OpStatsLogger getRecoverOpLogger() { return recoverOpLogger; }
     OpStatsLogger getReadOpLogger() { return readOpLogger; }
     OpStatsLogger getAddOpLogger() { return addOpLogger; }
     OpStatsLogger getWriteLacOpLogger() { return writeLacOpLogger; }
     OpStatsLogger getReadLacOpLogger() { return readLacOpLogger; }
+    OpStatsLogger getRecoverAddCountLogger() { return recoverAddEntriesStats; }
+    OpStatsLogger getRecoverReadCountLogger() { return recoverReadEntriesStats; }
+
+    static EventLoopGroup getDefaultEventLoopGroup() {
+        ThreadFactory threadFactory = new ThreadFactoryBuilder().setNameFormat("bookkeeper-io-%s").build();
+        final int numThreads = Runtime.getRuntime().availableProcessors() * 2;
+
+        if (SystemUtils.IS_OS_LINUX) {
+            try {
+                return new EpollEventLoopGroup(numThreads, threadFactory);
+            } catch (Throwable t) {
+                LOG.warn("Could not use Netty Epoll event loop for bookie server: {}", t.getMessage());
+                return new NioEventLoopGroup(numThreads, threadFactory);
+            }
+        } else {
+            return new NioEventLoopGroup(numThreads, threadFactory);
+        }
+    }
 }

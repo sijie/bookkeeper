@@ -20,21 +20,26 @@
  */
 package org.apache.bookkeeper.bookie;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+
 import java.io.File;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Arrays;
 import java.util.Collection;
 
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
 import org.apache.bookkeeper.bookie.EntryLogger.EntryLogScanner;
 import org.apache.bookkeeper.bookie.GarbageCollectorThread.CompactionScannerFactory;
+import org.apache.bookkeeper.bookie.LedgerDirsManager.NoWritableLedgerDirException;
+import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerHandle;
 import org.apache.bookkeeper.client.LedgerMetadata;
@@ -43,6 +48,7 @@ import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.meta.LedgerManagerFactory;
 import org.apache.bookkeeper.stats.NullStatsLogger;
+import org.apache.bookkeeper.proto.BookieServer;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.LedgerMetadataListener;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.Processor;
@@ -51,6 +57,7 @@ import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.TestUtils;
 import org.apache.bookkeeper.versioning.Version;
 import org.apache.zookeeper.AsyncCallback;
+
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -124,6 +131,7 @@ public class CompactionTest extends BookKeeperClusterTestCase {
         baseConf.setEntryLogFilePreAllocationEnabled(false);
         baseConf.setLedgerStorageClass(InterleavedLedgerStorage.class.getName());
         baseConf.setIsThrottleByBytes(this.isThrottleByBytes);
+        baseConf.setIsForceGCAllowWhenNoSpace(false);
 
         super.setUp();
     }
@@ -277,6 +285,111 @@ public class CompactionTest extends BookKeeperClusterTestCase {
         verifyLedger(lhs[0].getId(), 0, lhs[0].getLastAddConfirmed());
     }
 
+    @Test(timeout = 60000)
+    public void testMinorCompactionWithNoWritableLedgerDirs() throws Exception {
+        // prepare data
+        LedgerHandle[] lhs = prepareData(3, false);
+
+        for (LedgerHandle lh : lhs) {
+            lh.close();
+        }
+
+        // disable major compaction
+        baseConf.setMajorCompactionThreshold(0.0f);
+
+        // restart bookies
+        restartBookies(baseConf);
+
+        for (BookieServer bookieServer : bs) {
+            Bookie bookie = bookieServer.getBookie();
+            LedgerDirsManager ledgerDirsManager = bookie.getLedgerDirsManager();
+            List<File> ledgerDirs = ledgerDirsManager.getAllLedgerDirs();
+            // if all the discs are full then Major and Minor compaction would be disabled since
+            // 'isForceGCAllowWhenNoSpace' is not enabled. Check LedgerDirsListener of interleavedLedgerStorage.
+            for (File ledgerDir : ledgerDirs) {
+                ledgerDirsManager.addToFilledDirs(ledgerDir);
+            }
+        }
+
+        // remove ledger2 and ledger3
+        bkc.deleteLedger(lhs[1].getId());
+        bkc.deleteLedger(lhs[2].getId());
+
+        LOG.info("Finished deleting the ledgers contains most entries.");
+        Thread.sleep(baseConf.getMinorCompactionInterval() * 1000 + baseConf.getGcWaitTime());
+
+        // entry logs ([0,1,2].log) should still remain, because both major and Minor compaction are disabled.
+        for (File ledgerDirectory : tmpDirs) {
+            assertTrue(
+                    "All the entry log files ([0,1,2].log are not available, which is not expected" + ledgerDirectory,
+                    TestUtils.hasLogFiles(ledgerDirectory, false, 0, 1, 2));
+        }
+    }
+
+    @Test(timeout = 60000)
+    public void testMinorCompactionWithNoWritableLedgerDirsButIsForceGCAllowWhenNoSpaceIsSet() throws Exception {
+        // prepare data
+        LedgerHandle[] lhs = prepareData(3, false);
+
+        for (LedgerHandle lh : lhs) {
+            lh.close();
+        }
+
+        // disable major compaction
+        baseConf.setMajorCompactionThreshold(0.0f);
+
+        // here we are setting isForceGCAllowWhenNoSpace to true, so Major and Minor compaction wont be disabled in case
+        // when discs are full
+        baseConf.setIsForceGCAllowWhenNoSpace(true);
+
+        // restart bookies
+        restartBookies(baseConf);
+
+        for (BookieServer bookieServer : bs) {
+            Bookie bookie = bookieServer.getBookie();
+            LedgerDirsManager ledgerDirsManager = bookie.getLedgerDirsManager();
+            List<File> ledgerDirs = ledgerDirsManager.getAllLedgerDirs();
+            // Major and Minor compaction are not disabled even though discs are full. Check LedgerDirsListener of
+            // interleavedLedgerStorage.
+            for (File ledgerDir : ledgerDirs) {
+                ledgerDirsManager.addToFilledDirs(ledgerDir);
+            }
+        }
+
+        // remove ledger2 and ledger3
+        bkc.deleteLedger(lhs[1].getId());
+        bkc.deleteLedger(lhs[2].getId());
+
+        LOG.info("Finished deleting the ledgers contains most entries.");
+        Thread.sleep(baseConf.getMinorCompactionInterval() * 1000 + baseConf.getGcWaitTime() + 500);
+
+        // though all discs are added to filled dirs list, compaction would succeed, because in EntryLogger for
+        // allocating newlog
+        // we get getWritableLedgerDirsForNewLog() of ledgerDirsManager instead of getWritableLedgerDirs()
+        // entry logs ([0,1,2].log) should be compacted.
+        for (File ledgerDirectory : tmpDirs) {
+            assertFalse("Found entry log file ([0,1,2].log that should have not been compacted in ledgerDirectory: "
+                    + ledgerDirectory, TestUtils.hasLogFiles(ledgerDirectory, true, 0, 1, 2));
+        }
+
+        // even entry log files are removed, we still can access entries for ledger1
+        // since those entries has been compacted to new entry log
+        verifyLedger(lhs[0].getId(), 0, lhs[0].getLastAddConfirmed());
+
+        // for the sake of validity of test lets make sure that there is no writableLedgerDir in the bookies
+        for (BookieServer bookieServer : bs) {
+            Bookie bookie = bookieServer.getBookie();
+            LedgerDirsManager ledgerDirsManager = bookie.getLedgerDirsManager();
+            try {
+                List<File> ledgerDirs = ledgerDirsManager.getWritableLedgerDirs();
+                // it is expected not to have any writableLedgerDirs since we added all of them to FilledDirs
+                fail("It is expected not to have any writableLedgerDirs");
+            } catch (NoWritableLedgerDirException nwe) {
+
+            }
+        }
+    }
+    
     @Test(timeout=60000)
     public void testMajorCompaction() throws Exception {
 
@@ -571,14 +684,13 @@ public class CompactionTest extends BookKeeperClusterTestCase {
         storage.gcThread.doCompactEntryLogs(threshold);
     }
 
-    private ByteBuffer genEntry(long ledger, long entry, int size) {
-        ByteBuffer bb = ByteBuffer.wrap(new byte[size]);
-        bb.putLong(ledger);
-        bb.putLong(entry);
-        while (bb.hasRemaining()) {
-            bb.put((byte)0xFF);
+    private ByteBuf genEntry(long ledger, long entry, int size) {
+        ByteBuf bb = Unpooled.buffer(size);
+        bb.writeLong(ledger);
+        bb.writeLong(entry);
+        while (bb.isWritable()) {
+            bb.writeByte((byte)0xFF);
         }
-        bb.flip();
         return bb;
     }
 

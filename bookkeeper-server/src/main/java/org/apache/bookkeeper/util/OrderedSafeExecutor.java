@@ -18,22 +18,19 @@
 package org.apache.bookkeeper.util;
 
 import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningScheduledExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.util.Random;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.NullStatsLogger;
@@ -61,7 +58,7 @@ import org.slf4j.LoggerFactory;
 public class OrderedSafeExecutor {
     final static long WARN_TIME_MICRO_SEC_DEFAULT = TimeUnit.SECONDS.toMicros(1);
     final String name;
-    final ScheduledThreadPoolExecutor threads[];
+    final ListeningScheduledExecutorService threads[];
     final long threadIds[];
     final Random rand = new Random();
     final OpStatsLogger taskExecutionStats;
@@ -166,7 +163,6 @@ public class OrderedSafeExecutor {
      * @param warnTimeMicroSec
      *            - log long task exec warning after this interval
      */
-    @SuppressWarnings("unchecked")
     private OrderedSafeExecutor(String baseName, int numThreads, ThreadFactory threadFactory,
                                 StatsLogger statsLogger, boolean traceTaskExecution,
                                 long warnTimeMicroSec) {
@@ -175,16 +171,15 @@ public class OrderedSafeExecutor {
 
         this.warnTimeMicroSec = warnTimeMicroSec;
         name = baseName;
-        threads = new ScheduledThreadPoolExecutor[numThreads];
+        threads = new ListeningScheduledExecutorService[numThreads];
         threadIds = new long[numThreads];
         for (int i = 0; i < numThreads; i++) {
-            threads[i] =  new ScheduledThreadPoolExecutor(1,
+            final ScheduledThreadPoolExecutor thread =  new ScheduledThreadPoolExecutor(1,
                     new ThreadFactoryBuilder()
                         .setNameFormat(name + "-orderedsafeexecutor-" + i + "-%d")
                         .setThreadFactory(threadFactory)
                         .build());
-
-            // Save thread ids
+            threads[i] = MoreExecutors.listeningDecorator(thread);
             final int idx = i;
             try {
                 threads[idx].submit(new SafeRunnable() {
@@ -208,7 +203,7 @@ public class OrderedSafeExecutor {
 
                 @Override
                 public Number getSample() {
-                    return threads[idx].getQueue().size();
+                    return thread.getQueue().size();
                 }
             });
             statsLogger.registerGauge(String.format("%s-completed-tasks-%d", name, idx), new Gauge<Number>() {
@@ -219,7 +214,7 @@ public class OrderedSafeExecutor {
 
                 @Override
                 public Number getSample() {
-                    return threads[idx].getCompletedTaskCount();
+                    return thread.getCompletedTaskCount();
                 }
             });
             statsLogger.registerGauge(String.format("%s-total-tasks-%d", name, idx), new Gauge<Number>() {
@@ -230,7 +225,7 @@ public class OrderedSafeExecutor {
 
                 @Override
                 public Number getSample() {
-                    return threads[idx].getTaskCount();
+                    return thread.getTaskCount();
                 }
             });
         }
@@ -241,24 +236,36 @@ public class OrderedSafeExecutor {
         this.traceTaskExecution = traceTaskExecution;
     }
 
-    ScheduledExecutorService chooseThread() {
+    public ListeningScheduledExecutorService chooseThread() {
         // skip random # generation in this special case
         if (threads.length == 1) {
             return threads[0];
         }
 
         return threads[rand.nextInt(threads.length)];
-
     }
 
-    ScheduledExecutorService chooseThread(Object orderingKey) {
+    public ListeningScheduledExecutorService chooseThread(Object orderingKey) {
         // skip hashcode generation in this special case
         if (threads.length == 1) {
             return threads[0];
         }
 
         return threads[MathUtils.signSafeMod(orderingKey.hashCode(), threads.length)];
+    }
 
+    /**
+     * skip hashcode generation in this special case
+     *
+     * @param orderingKey long ordering key
+     * @return the thread for executing this order key
+     */
+    public ListeningScheduledExecutorService chooseThread(long orderingKey) {
+        if (threads.length == 1) {
+            return threads[0];
+        }
+
+        return threads[MathUtils.signSafeMod(orderingKey, threads.length)];
     }
 
     private SafeRunnable timedRunnable(SafeRunnable r) {
@@ -281,13 +288,42 @@ public class OrderedSafeExecutor {
      * @param orderingKey
      * @param r
      */
-    public void submitOrdered(Object orderingKey, SafeRunnable r) {
-        chooseThread(orderingKey).submit(timedRunnable(r));
+    public ListenableFuture<?> submitOrdered(Object orderingKey, SafeRunnable r) {
+        return chooseThread(orderingKey).submit(timedRunnable(r));
+    }
+
+    /**
+     * schedules a one time action to execute with an ordering guarantee on the key
+     * @param orderingKey
+     * @param r
+     */
+    public void submitOrdered(long orderingKey, SafeRunnable r) {
+        chooseThread(orderingKey).execute(r);
+    }
+
+    /**
+     * schedules a one time action to execute with an ordering guarantee on the key
+     * @param orderingKey
+     * @param r
+     */
+    public void submitOrdered(int orderingKey, SafeRunnable r) {
+        chooseThread(orderingKey).execute(r);
+    }
+
+    /**
+     * schedules a one time action to execute with an ordering guarantee on the key.
+     *
+     * @param orderingKey
+     * @param callable
+     */
+    public <T> ListenableFuture<T> submitOrdered(Object orderingKey,
+                                                 java.util.concurrent.Callable<T> callable) {
+        return chooseThread(orderingKey).submit(callable);
     }
 
     /**
      * Creates and executes a one-shot action that becomes enabled after the given delay.
-     * 
+     *
      * @param command - the SafeRunnable to execute
      * @param delay - the time from now to delay execution
      * @param unit - the time unit of the delay parameter
@@ -299,8 +335,8 @@ public class OrderedSafeExecutor {
 
     /**
      * Creates and executes a one-shot action that becomes enabled after the given delay.
-     * 
-     * @param orderingKey - the key used for ordering 
+     *
+     * @param orderingKey - the key used for ordering
      * @param command - the SafeRunnable to execute
      * @param delay - the time from now to delay execution
      * @param unit - the time unit of the delay parameter
@@ -310,35 +346,35 @@ public class OrderedSafeExecutor {
         return chooseThread(orderingKey).schedule(command, delay, unit);
     }
 
-    /** 
+    /**
      * Creates and executes a periodic action that becomes enabled first after
-     * the given initial delay, and subsequently with the given period; 
-     * 
+     * the given initial delay, and subsequently with the given period;
+     *
      * For more details check scheduleAtFixedRate in interface ScheduledExecutorService
-     * 
+     *
      * @param command - the SafeRunnable to execute
      * @param initialDelay - the time to delay first execution
      * @param period - the period between successive executions
      * @param unit - the time unit of the initialDelay and period parameters
-     * @return a ScheduledFuture representing pending completion of the task, and whose get() 
+     * @return a ScheduledFuture representing pending completion of the task, and whose get()
      * method will throw an exception upon cancellation
      */
     public ScheduledFuture<?> scheduleAtFixedRate(SafeRunnable command, long initialDelay, long period, TimeUnit unit) {
         return chooseThread().scheduleAtFixedRate(command, initialDelay, period, unit);
     }
 
-    /** 
+    /**
      * Creates and executes a periodic action that becomes enabled first after
-     * the given initial delay, and subsequently with the given period; 
-     * 
+     * the given initial delay, and subsequently with the given period;
+     *
      * For more details check scheduleAtFixedRate in interface ScheduledExecutorService
-     * 
+     *
      * @param orderingKey - the key used for ordering
      * @param command - the SafeRunnable to execute
      * @param initialDelay - the time to delay first execution
      * @param period - the period between successive executions
      * @param unit - the time unit of the initialDelay and period parameters
-     * @return a ScheduledFuture representing pending completion of the task, and whose get() method 
+     * @return a ScheduledFuture representing pending completion of the task, and whose get() method
      * will throw an exception upon cancellation
      */
     public ScheduledFuture<?> scheduleAtFixedRateOrdered(Object orderingKey, SafeRunnable command, long initialDelay,
@@ -347,16 +383,16 @@ public class OrderedSafeExecutor {
     }
 
     /**
-     * Creates and executes a periodic action that becomes enabled first after the given initial delay, and subsequently 
+     * Creates and executes a periodic action that becomes enabled first after the given initial delay, and subsequently
      * with the given delay between the termination of one execution and the commencement of the next.
-     * 
+     *
      * For more details check scheduleWithFixedDelay in interface ScheduledExecutorService
-     * 
+     *
      * @param command - the SafeRunnable to execute
      * @param initialDelay - the time to delay first execution
      * @param delay - the delay between the termination of one execution and the commencement of the next
      * @param unit - the time unit of the initialDelay and delay parameters
-     * @return a ScheduledFuture representing pending completion of the task, and whose get() method 
+     * @return a ScheduledFuture representing pending completion of the task, and whose get() method
      * will throw an exception upon cancellation
      */
     public ScheduledFuture<?> scheduleWithFixedDelay(SafeRunnable command, long initialDelay, long delay,
@@ -365,17 +401,17 @@ public class OrderedSafeExecutor {
     }
 
     /**
-     * Creates and executes a periodic action that becomes enabled first after the given initial delay, and subsequently 
+     * Creates and executes a periodic action that becomes enabled first after the given initial delay, and subsequently
      * with the given delay between the termination of one execution and the commencement of the next.
-     * 
+     *
      * For more details check scheduleWithFixedDelay in interface ScheduledExecutorService
-     * 
+     *
      * @param orderingKey - the key used for ordering
      * @param command - the SafeRunnable to execute
      * @param initialDelay - the time to delay first execution
      * @param delay - the delay between the termination of one execution and the commencement of the next
      * @param unit - the time unit of the initialDelay and delay parameters
-     * @return a ScheduledFuture representing pending completion of the task, and whose get() method 
+     * @return a ScheduledFuture representing pending completion of the task, and whose get() method
      * will throw an exception upon cancellation
      */
     public ScheduledFuture<?> scheduleWithFixedDelayOrdered(Object orderingKey, SafeRunnable command, long initialDelay,
@@ -383,13 +419,13 @@ public class OrderedSafeExecutor {
         return chooseThread(orderingKey).scheduleWithFixedDelay(command, initialDelay, delay, unit);
     }
 
-    private long getThreadID(Object orderingKey) {
+    private long getThreadID(long orderingKey) {
         // skip hashcode generation in this special case
         if (threadIds.length == 1) {
             return threadIds[0];
         }
 
-        return threadIds[MathUtils.signSafeMod(orderingKey.hashCode(), threadIds.length)];
+        return threadIds[MathUtils.signSafeMod(orderingKey, threadIds.length)];
     }
 
     public void shutdown() {
@@ -407,22 +443,40 @@ public class OrderedSafeExecutor {
     }
 
     /**
+     * Force threads shutdown (cancel active requests) after specified delay,
+     * to be used after shutdown() rejects new requests.
+     */
+    public void forceShutdown(long timeout, TimeUnit unit) {
+        for (int i = 0; i < threads.length; i++) {
+            try {
+                if (!threads[i].awaitTermination(timeout, unit)) {
+                    threads[i].shutdownNow();
+                }
+            }
+            catch (InterruptedException exception) {
+                threads[i].shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
      * Generic callback implementation which will run the
      * callback in the thread which matches the ordering key
      */
     public static abstract class OrderedSafeGenericCallback<T>
             implements GenericCallback<T> {
-        private final Logger LOG = LoggerFactory.getLogger(OrderedSafeGenericCallback.class);
+        private static final Logger LOG = LoggerFactory.getLogger(OrderedSafeGenericCallback.class);
 
         private final OrderedSafeExecutor executor;
-        private final Object orderingKey;
+        private final long orderingKey;
 
         /**
          * @param executor The executor on which to run the callback
          * @param orderingKey Key used to decide which thread the callback
          *                    should run on.
          */
-        public OrderedSafeGenericCallback(OrderedSafeExecutor executor, Object orderingKey) {
+        public OrderedSafeGenericCallback(OrderedSafeExecutor executor, long orderingKey) {
             this.executor = executor;
             this.orderingKey = orderingKey;
         }

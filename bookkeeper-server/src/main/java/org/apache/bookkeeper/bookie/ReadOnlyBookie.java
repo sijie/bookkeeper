@@ -45,7 +45,7 @@ public class ReadOnlyBookie extends Bookie {
         if (conf.isReadOnlyModeEnabled()) {
             readOnly.set(true);
         } else {
-            String err = "Try to init ReadOnly Bookie, while ReadOnly mode is not enabled";
+            String err = "Try to checkAllDirs ReadOnly Bookie, while ReadOnly mode is not enabled";
             LOG.error(err);
             throw new IOException(err);
         }

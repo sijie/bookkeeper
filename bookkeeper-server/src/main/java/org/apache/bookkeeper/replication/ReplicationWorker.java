@@ -208,12 +208,12 @@ public class ReplicationWorker implements Runnable {
         long ledgerIdToReplicate = underreplicationManager
                 .getLedgerToRereplicate();
 
-        Stopwatch stopwatch = new Stopwatch().start();
+        Stopwatch stopwatch = Stopwatch.createStarted();
         boolean success = false;
         try {
             success = rereplicate(ledgerIdToReplicate);
         } finally {
-            long latencyMillis = stopwatch.stop().elapsedMillis();
+            long latencyMillis = stopwatch.stop().elapsed(TimeUnit.MILLISECONDS);
             if (success) {
                 rereplicateOpStats.registerSuccessfulEvent(latencyMillis, TimeUnit.MILLISECONDS);
             } else {
@@ -224,10 +224,15 @@ public class ReplicationWorker implements Runnable {
 
     private boolean rereplicate(long ledgerIdToReplicate) throws InterruptedException, BKException,
             UnavailableException {
-        LOG.debug("Going to replicate the fragments of the ledger: {}", ledgerIdToReplicate);
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Going to replicate the fragments of the ledger: {}", ledgerIdToReplicate);
+        }
         try (LedgerHandle lh = admin.openLedgerNoRecovery(ledgerIdToReplicate)) {
             Set<LedgerFragment> fragments = getUnderreplicatedFragments(lh);
-            LOG.debug("Founds fragments {} for replication from ledger: {}", fragments, ledgerIdToReplicate);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Founds fragments {} for replication from ledger: {}", fragments, ledgerIdToReplicate);
+            }
 
             boolean foundOpenFragments = false;
             long numFragsReplicated = 0;
@@ -237,8 +242,10 @@ public class ReplicationWorker implements Runnable {
                     continue;
                 } else if (isTargetBookieExistsInFragmentEnsemble(lh,
                         ledgerFragment)) {
-                    LOG.debug("Target Bookie[{}] found in the fragment ensemble: {}", targetBookie,
-                            ledgerFragment.getEnsemble());
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Target Bookie[{}] found in the fragment ensemble: {}", targetBookie,
+                                ledgerFragment.getEnsemble());
+                    }
                     continue;
                 }
                 try {
@@ -383,7 +390,9 @@ public class ReplicationWorker implements Runnable {
                     LOG.info("InterruptedException "
                             + "while replicating fragments", e);
                 } catch (BKNoSuchLedgerExistsException bknsle) {
-                    LOG.debug("Ledger was deleted, safe to continue", bknsle);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Ledger was deleted, safe to continue", bknsle);
+                    }
                 } catch (BKException e) {
                     LOG.error("BKException while fencing the ledger"
                             + " for rereplication of postponed ledgers", e);

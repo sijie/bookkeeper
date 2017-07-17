@@ -43,6 +43,8 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import io.netty.buffer.ByteBuf;
+
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.LEDGER_CACHE_NUM_EVICTED_LEDGERS;
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.NUM_OPEN_LEDGERS;
 
@@ -148,8 +150,10 @@ public class IndexPersistenceMgr {
             fi = oldFi;
         } else {
             if (createdNewFile) {
-                // Else, we won and the active ledger manager should know about this.
-                LOG.debug("New ledger index file created for ledgerId: {}", ledger);
+                // Else, we won and the active ledger manager should know about this
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("New ledger index file created for ledgerId: {}", ledger);
+                }
                 activeLedgers.put(ledger, true);
             }
             // Evict cached items from the file info cache if necessary
@@ -173,7 +177,7 @@ public class IndexPersistenceMgr {
      */
     private File getNewLedgerIndexFile(Long ledger, File excludedDir)
                     throws NoWritableLedgerDirException {
-        File dir = ledgerDirsManager.pickRandomWritableDir(excludedDir);
+        File dir = ledgerDirsManager.pickRandomWritableDirForNewIndexFile(excludedDir);
         String ledgerName = getLedgerName(ledger);
         return new File(dir, ledgerName);
     }
@@ -389,7 +393,7 @@ public class IndexPersistenceMgr {
         }
     }
 
-    void setExplicitLac(long ledgerId, ByteBuffer lac) throws IOException {
+    void setExplicitLac(long ledgerId, ByteBuf lac) throws IOException {
         FileInfo fi = null;
         try {
             fi = getFileInfo(ledgerId, null);
@@ -402,7 +406,7 @@ public class IndexPersistenceMgr {
         }
     }
 
-    public ByteBuffer getExplicitLac(long ledgerId) {
+    public ByteBuf getExplicitLac(long ledgerId) {
         FileInfo fi = null;
         try {
             fi = getFileInfo(ledgerId, null);

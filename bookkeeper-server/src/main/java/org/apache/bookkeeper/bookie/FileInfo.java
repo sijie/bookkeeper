@@ -36,6 +36,9 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+
 /**
  * This is the file handle for a ledger's index file that maps entry ids to location.
  * It is used by LedgerCache.
@@ -114,35 +117,39 @@ class FileInfo {
         return sizeSinceLastwrite;
     }
 
-    public ByteBuffer getExplicitLac() {
-        ByteBuffer retLac = null;
+    public ByteBuf getExplicitLac() {
+        ByteBuf retLac = null;
         synchronized(this) {
-            LOG.debug("fileInfo:GetLac: {}", explicitLac);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("fileInfo:GetLac: {}", explicitLac);
+            }
             if (explicitLac != null) {
-                retLac = ByteBuffer.allocate(explicitLac.capacity());
+                retLac = Unpooled.buffer(explicitLac.capacity());
                 explicitLac.rewind();//copy from the beginning
-                retLac.put(explicitLac);
+                retLac.writeBytes(explicitLac);
                 explicitLac.rewind();
-                retLac.flip();
+                return retLac;
             }
         }
         return retLac;
     }
 
-    public void setExplicitLac(ByteBuffer lac) {
+    public void setExplicitLac(ByteBuf lac) {
         synchronized(this) {
             if (explicitLac == null) {
                 explicitLac = ByteBuffer.allocate(lac.capacity());
             }
-            explicitLac.put(lac);
+            lac.readBytes(explicitLac);
             explicitLac.rewind();
-            
+
             // skip the ledger id
-            explicitLac.getLong();            
+            explicitLac.getLong();
             long explicitLacValue = explicitLac.getLong();
             setLastAddConfirmed(explicitLacValue);
             explicitLac.rewind();
-            LOG.debug("fileInfo:SetLac: {}", explicitLac);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("fileInfo:SetLac: {}", explicitLac);
+            }
         }
     }
 
@@ -241,7 +248,9 @@ class FileInfo {
      */
     synchronized public boolean setFenced() throws IOException {
         checkOpen(false);
-        LOG.debug("Try to set fenced state in file info {} : state bits {}.", lf, stateBits);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Try to set fenced state in file info {} : state bits {}.", lf, stateBits);
+        }
         if ((stateBits & STATE_FENCED_BIT) != STATE_FENCED_BIT) {
             // not fenced yet
             stateBits |= STATE_FENCED_BIT;

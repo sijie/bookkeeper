@@ -19,13 +19,11 @@ package org.apache.bookkeeper.client;
 
 import org.apache.bookkeeper.client.BKException.BKDigestMatchException;
 import org.apache.bookkeeper.client.DigestManager.RecoveryData;
-import org.apache.bookkeeper.net.BookieSocketAddress;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.ReadEntryCallback;
-import org.apache.bookkeeper.proto.BookieProtocol;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.ReadLacCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.jboss.netty.buffer.ChannelBuffer;
+
+import io.netty.buffer.ByteBuf;
 
 /**
  * This represents a pending ReadLac operation.
@@ -74,8 +72,13 @@ class PendingReadLacOp implements ReadLacCallback {
     }
 
     @Override
-    public void readLacComplete(int rc, long ledgerId, final ChannelBuffer lacBuffer, final ChannelBuffer lastEntryBuffer, Object ctx) {
+    public void readLacComplete(int rc, long ledgerId, final ByteBuf lacBuffer, final ByteBuf lastEntryBuffer,
+            Object ctx) {
         int bookieIndex = (Integer) ctx;
+
+        // add the response to coverage set
+        coverageSet.addBookie(bookieIndex, rc);
+
         numResponsesPending--;
         boolean heardValidResponse = false;
 
@@ -128,11 +131,12 @@ class PendingReadLacOp implements ReadLacCallback {
 
         // We don't consider a success until we have coverage set responses.
         if (heardValidResponse
-                && coverageSet.addBookieAndCheckCovered(bookieIndex)
+                && coverageSet.checkCovered()
                 && !completed) {
             completed = true;
-            LOG.debug("Read LAC complete with enough validResponse for ledger: {} LAC: {}",
-                    ledgerId, maxLac);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Read LAC complete with enough validResponse for ledger: {} LAC: {}", ledgerId, maxLac);
+            }
             cb.getLacComplete(BKException.Code.OK, maxLac);
             return;
         }

@@ -22,7 +22,6 @@
 package org.apache.bookkeeper.bookie;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.stats.NullStatsLogger;
@@ -30,6 +29,8 @@ import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.util.SnapshotMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
 
 /**
  * Implementation of LedgerCache interface.
@@ -116,7 +117,9 @@ public class LedgerCacheImpl implements LedgerCache {
      */
     @Override
     public void deleteLedger(long ledgerId) throws IOException {
-        LOG.debug("Deleting ledgerId: {}", ledgerId);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Deleting ledgerId: {}", ledgerId);
+        }
 
         indexPageManager.removePagesForLedger(ledgerId);
         indexPersistenceManager.removeLedger(ledgerId);
@@ -137,11 +140,11 @@ public class LedgerCacheImpl implements LedgerCache {
         return indexPersistenceManager.isFenced(ledgerId);
     }
 
-    public void setExplicitLac(long ledgerId, ByteBuffer lac) throws IOException {
+    public void setExplicitLac(long ledgerId, ByteBuf lac) throws IOException {
         indexPersistenceManager.setExplicitLac(ledgerId, lac);
     }
 
-    public ByteBuffer getExplicitLac(long ledgerId) {
+    public ByteBuf getExplicitLac(long ledgerId) {
         return indexPersistenceManager.getExplicitLac(ledgerId);
     }
 
@@ -153,46 +156,6 @@ public class LedgerCacheImpl implements LedgerCache {
     @Override
     public boolean ledgerExists(long ledgerId) throws IOException {
         return indexPersistenceManager.ledgerExists(ledgerId);
-    }
-
-    @Override
-    public LedgerCacheBean getJMXBean() {
-        return new LedgerCacheBean() {
-            @Override
-            public String getName() {
-                return "LedgerCache";
-            }
-
-            @Override
-            public boolean isHidden() {
-                return false;
-            }
-
-            @Override
-            public int getPageCount() {
-                return LedgerCacheImpl.this.indexPageManager.getNumUsedPages();
-            }
-
-            @Override
-            public int getPageSize() {
-                return LedgerCacheImpl.this.getPageSize();
-            }
-
-            @Override
-            public int getOpenFileLimit() {
-                return LedgerCacheImpl.this.indexPersistenceManager.getOpenFileLimit();
-            }
-
-            @Override
-            public int getPageLimit() {
-                return LedgerCacheImpl.this.indexPageManager.getPageLimit();
-            }
-
-            @Override
-            public int getNumOpenLedgers() {
-                return LedgerCacheImpl.this.indexPersistenceManager.getNumOpenLedgers();
-            }
-        };
     }
 
     @Override

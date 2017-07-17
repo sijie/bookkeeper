@@ -23,7 +23,6 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.annotations.Beta;
 
-import com.google.common.collect.Lists;
 import org.apache.bookkeeper.stats.NullStatsProvider;
 import org.apache.bookkeeper.stats.StatsProvider;
 import org.apache.bookkeeper.util.BookKeeperConstants;
@@ -90,6 +89,8 @@ public class ServerConfiguration extends AbstractConfiguration {
     protected final static String ALLOW_STORAGE_EXPANSION = "allowStorageExpansion";
     // NIO Parameters
     protected final static String SERVER_TCP_NODELAY = "serverTcpNoDelay";
+    protected final static String SERVER_SOCK_KEEPALIVE = "serverSockKeepalive";
+    protected final static String SERVER_SOCK_LINGER = "serverTcpLinger";
 
     // Zookeeper Parameters
     protected final static String ZK_TIMEOUT = "zkTimeout";
@@ -104,6 +105,7 @@ public class ServerConfiguration extends AbstractConfiguration {
     //Disk utilization
     protected final static String DISK_USAGE_THRESHOLD = "diskUsageThreshold";
     protected final static String DISK_USAGE_WARN_THRESHOLD = "diskUsageWarnThreshold";
+    protected final static String DISK_USAGE_LWM_THRESHOLD = "diskUsageLwmThreshold";
     protected final static String DISK_CHECK_INTERVAL = "diskCheckInterval";
     protected final static String AUDITOR_PERIODIC_CHECK_INTERVAL = "auditorPeriodicCheckInterval";
     protected final static String AUDITOR_PERIODIC_BOOKIE_CHECK_INTERVAL = "auditorPeriodicBookieCheckInterval";
@@ -133,8 +135,15 @@ public class ServerConfiguration extends AbstractConfiguration {
 
     protected final static String LEDGER_STORAGE_CLASS = "ledgerStorageClass";
 
+    // Rx adaptive ByteBuf allocator parameters
+    protected final static String BYTEBUF_ALLOCATOR_SIZE_INITIAL = "byteBufAllocatorSizeInitial";
+    protected final static String BYTEBUF_ALLOCATOR_SIZE_MIN = "byteBufAllocatorSizeMin";
+    protected final static String BYTEBUF_ALLOCATOR_SIZE_MAX = "byteBufAllocatorSizeMax";
+
     // Bookie auth provider factory class name
     protected final static String BOOKIE_AUTH_PROVIDER_FACTORY_CLASS = "bookieAuthProviderFactoryClass";
+    
+    protected final static String MIN_USABLESIZE_FOR_INDEXFILE_CREATION = "minUsableSizeForIndexFileCreation";
 
     /**
      * Construct a default configuration object
@@ -598,6 +607,16 @@ public class ServerConfiguration extends AbstractConfiguration {
     }
 
     /**
+     * Get dir name to store journal files
+     *
+     * @return journal dir name
+     */
+    public String getJournalDirNameWithoutDefault() {
+        return this.getString(JOURNAL_DIR);
+    }
+
+
+    /**
      * Set dir name to store journal files
      *
      * @param journalDir
@@ -640,9 +659,18 @@ public class ServerConfiguration extends AbstractConfiguration {
      *
      * @return ledger dir names, if not provided return null
      */
+    public String[] getLedgerDirWithoutDefault() {
+        return this.getStringArray(LEDGER_DIRS);
+    }
+
+    /**
+     * Get dir names to store ledger data
+     *
+     * @return ledger dir names, if not provided return null
+     */
     public String[] getLedgerDirNames() {
         String[] ledgerDirs = this.getStringArray(LEDGER_DIRS);
-        if (null == ledgerDirs) {
+        if ((null == ledgerDirs) || (0 == ledgerDirs.length)) {
             return new String[] { "/tmp/bk-data" };
         }
         return ledgerDirs;
@@ -737,6 +765,54 @@ public class ServerConfiguration extends AbstractConfiguration {
      */
     public ServerConfiguration setServerTcpNoDelay(boolean noDelay) {
         setProperty(SERVER_TCP_NODELAY, Boolean.toString(noDelay));
+        return this;
+    }
+
+    /**
+     * Timeout to drain the socket on close.
+     *
+     * @return socket linger setting
+     */
+    public int getServerSockLinger() {
+        return getInt(SERVER_SOCK_LINGER, 0);
+    }
+
+    /**
+     * Set socket linger timeout on close.
+     * 
+     * When enabled, a close or shutdown will not return until all queued messages for the socket have been successfully
+     * sent or the linger timeout has been reached. Otherwise, the call returns immediately and the closing is done in
+     * the background.
+     *
+     * @param noDelay
+     *            NoDelay setting
+     * @return server configuration
+     */
+    public ServerConfiguration setServerSockLinger(int linger) {
+        setProperty(SERVER_SOCK_LINGER, Integer.toString(linger));
+        return this;
+    }
+
+    /**
+     * get socket keepalive
+     * 
+     * @return socket keepalive setting
+     */
+    public boolean getServerSockKeepalive() {
+        return getBoolean(SERVER_SOCK_KEEPALIVE, true);
+    }
+
+    /**
+     * Set socket keepalive setting.
+     * 
+     * This setting is used to send keep-alive messages on connection-oriented sockets.
+     * 
+     * @param keepalive
+     *            KeepAlive setting
+     * @return server configuration
+     */
+    public ServerConfiguration setServerSockKeepalive(boolean keepalive) {
+        setProperty(SERVER_SOCK_KEEPALIVE, Boolean.toString(keepalive));
         return this;
     }
 
@@ -1333,6 +1409,35 @@ public class ServerConfiguration extends AbstractConfiguration {
         return getFloat(DISK_USAGE_THRESHOLD, 0.95f);
     }
 
+    
+    /**
+     * Set the disk free space low water mark threshold. 
+     * Disk is considered full when usage threshold is exceeded.
+     * Disk returns back to non-full state when usage is below low water mark threshold.
+     * This prevents it from going back and forth between these states frequently 
+     * when concurrent writes and compaction are happening. This also prevent bookie from 
+     * switching frequently between read-only and read-writes states in the same cases.  
+     *
+     * @param threshold threshold to declare a disk full
+     *
+     * @return ServerConfiguration
+     */
+    public ServerConfiguration setDiskLowWaterMarkUsageThreshold(float threshold) {
+        setProperty(DISK_USAGE_LWM_THRESHOLD, threshold);
+        return this;
+    }
+
+    /**
+     * Returns disk free space low water mark threshold. By default it is the 
+     * same as usage threshold (for backwards-compatibility).
+     *
+     * @return the percentage below which a disk will NOT be considered full
+     */
+    public float getDiskLowWaterMarkUsageThreshold() {
+        return getFloat(DISK_USAGE_LWM_THRESHOLD, getDiskUsageThreshold());
+    }
+
+    
     /**
      * Set the disk checker interval to monitor ledger disk space
      *
@@ -1749,6 +1854,63 @@ public class ServerConfiguration extends AbstractConfiguration {
         }
     }
 
+    /**
+     * Get Recv ByteBuf allocator initial buf size
+     * 
+     * @return initial byteBuf size
+     */
+    public int getRecvByteBufAllocatorSizeInitial() {
+        return getInt(BYTEBUF_ALLOCATOR_SIZE_INITIAL, 64 * 1024);
+    }
+
+    /**
+     * Set Recv ByteBuf allocator initial buf size
+     * 
+     * @param size
+     *            buffer size
+     */
+    public void setRecvByteBufAllocatorSizeInitial(int size) {
+        setProperty(BYTEBUF_ALLOCATOR_SIZE_INITIAL, size);
+    }
+
+    /**
+     * Get Recv ByteBuf allocator min buf size
+     * 
+     * @return min byteBuf size
+     */
+    public int getRecvByteBufAllocatorSizeMin() {
+        return getInt(BYTEBUF_ALLOCATOR_SIZE_MIN, 64 * 1024);
+    }
+
+    /**
+     * Set Recv ByteBuf allocator min buf size
+     * 
+     * @param size
+     *            buffer size
+     */
+    public void setRecvByteBufAllocatorSizeMin(int size) {
+        setProperty(BYTEBUF_ALLOCATOR_SIZE_MIN, size);
+    }
+
+    /**
+     * Get Recv ByteBuf allocator max buf size
+     * 
+     * @return max byteBuf size
+     */
+    public int getRecvByteBufAllocatorSizeMax() {
+        return getInt(BYTEBUF_ALLOCATOR_SIZE_MAX, 1 * 1024 * 1024);
+    }
+
+    /**
+     * Set Recv ByteBuf allocator max buf size
+     * 
+     * @param size
+     *            buffer size
+     */
+    public void setRecvByteBufAllocatorSizeMax(int size) {
+        setProperty(BYTEBUF_ALLOCATOR_SIZE_MAX, size);
+    }
+
     /*
      * Set the bookie authentication provider factory class name.
      * If this is not set, no authentication will be used
@@ -1777,6 +1939,28 @@ public class ServerConfiguration extends AbstractConfiguration {
     @Override
     public ServerConfiguration setNettyMaxFrameSizeBytes(int maxSize) {
         super.setNettyMaxFrameSizeBytes(maxSize);
+        return this;
+    }
+    
+    /**
+     * Gets the minimum safe Usable size to be available in index directory for Bookie to create Index File while replaying 
+     * journal at the time of Bookie Start in Readonly Mode (in bytes)
+     * 
+     * @return
+     */
+    public long getMinUsableSizeForIndexFileCreation() {
+        return this.getLong(MIN_USABLESIZE_FOR_INDEXFILE_CREATION, 100 * 1024 * 1024L);
+    }
+
+    /**
+     * Sets the minimum safe Usable size to be available in index directory for Bookie to create Index File while replaying 
+     * journal at the time of Bookie Start in Readonly Mode (in bytes)
+     * 
+     * @param minUsableSizeForIndexFileCreation
+     * @return
+     */
+    public ServerConfiguration setMinUsableSizeForIndexFileCreation(long minUsableSizeForIndexFileCreation) {
+        this.setProperty(MIN_USABLESIZE_FOR_INDEXFILE_CREATION, Long.toString(minUsableSizeForIndexFileCreation));
         return this;
     }
 }

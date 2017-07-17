@@ -286,10 +286,11 @@ public class Auditor implements BookiesListener {
                                     return;
                                 }
 
-                                Stopwatch stopwatch = new Stopwatch().start();
+                                Stopwatch stopwatch = Stopwatch.createStarted();
                                 checkAllLedgers();
-                                checkAllLedgersTime.registerSuccessfulEvent(stopwatch.stop().elapsedMillis(),
-                                                                            TimeUnit.MILLISECONDS);
+                                checkAllLedgersTime.registerSuccessfulEvent(stopwatch.stop()
+                                                .elapsed(TimeUnit.MILLISECONDS),
+                                        TimeUnit.MILLISECONDS);
                             } catch (KeeperException ke) {
                                 LOG.error("Exception while running periodic check", ke);
                             } catch (InterruptedException ie) {
@@ -369,17 +370,13 @@ public class Auditor implements BookiesListener {
             shutDownTask = false;
         } catch (BKException bke) {
             LOG.error("Exception getting bookie list", bke);
-            shutDownTask &= true;
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             LOG.error("Interrupted while watching available bookies ", ie);
-            shutDownTask &= true;
         } catch (BKAuditException bke) {
             LOG.error("Exception while watching available bookies", bke);
-            shutDownTask &= true;
         } catch (KeeperException ke) {
             LOG.error("Exception reading bookie list", ke);
-            shutDownTask &= true;
         }
         if (shutDownTask) {
             submitShutdownTask();
@@ -398,7 +395,7 @@ public class Auditor implements BookiesListener {
             return;
         }
 
-        Stopwatch stopwatch = new Stopwatch().start();
+        Stopwatch stopwatch = Stopwatch.createStarted();
         // put exit cases here
         Map<String, Set<Long>> ledgerDetails = generateBookie2LedgersIndex();
         try {
@@ -420,10 +417,12 @@ public class Auditor implements BookiesListener {
         Collection<String> lostBookies = CollectionUtils.subtract(knownBookies,
                 availableBookies);
 
-        bookieToLedgersMapCreationTime.registerSuccessfulEvent(stopwatch.elapsedMillis(), TimeUnit.MILLISECONDS);
+        bookieToLedgersMapCreationTime.registerSuccessfulEvent(stopwatch.elapsed(TimeUnit.MILLISECONDS),
+                TimeUnit.MILLISECONDS);
         if (lostBookies.size() > 0) {
             handleLostBookies(lostBookies, ledgerDetails);
-            uRLPublishTimeForLostBookies.registerSuccessfulEvent(stopwatch.stop().elapsedMillis(), TimeUnit.MILLISECONDS);
+            uRLPublishTimeForLostBookies.registerSuccessfulEvent(stopwatch.stop().elapsed(TimeUnit.MILLISECONDS),
+                    TimeUnit.MILLISECONDS);
         }
 
     }
@@ -563,7 +562,9 @@ public class Auditor implements BookiesListener {
                         numBookiesPerLedger.registerSuccessfulValue(lh.getNumBookies());
                         numLedgersChecked.inc();
                     } catch (BKException.BKNoSuchLedgerExistsException bknsle) {
-                        LOG.debug("Ledger was deleted before we could check it", bknsle);
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("Ledger was deleted before we could check it", bknsle);
+                        }
                         callback.processResult(BKException.Code.OK,
                                                null, null);
                         return;

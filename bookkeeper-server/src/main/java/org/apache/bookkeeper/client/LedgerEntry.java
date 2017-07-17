@@ -1,5 +1,3 @@
-package org.apache.bookkeeper.client;
-
 /*
  *
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -20,27 +18,23 @@ package org.apache.bookkeeper.client;
  * under the License.
  *
  */
+package org.apache.bookkeeper.client;
 
-import java.io.IOException;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufInputStream;
+
 import java.io.InputStream;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.jboss.netty.buffer.ChannelBufferInputStream;
 
 /**
  * Ledger entry. Its a simple tuple containing the ledger id, the entry-id, and
  * the entry content.
  *
  */
-
 public class LedgerEntry {
-    private final static Logger LOG = LoggerFactory.getLogger(LedgerEntry.class);
-
     long ledgerId;
     long entryId;
     long length;
-    ChannelBufferInputStream entryDataStream;
+    ByteBuf data;
 
     LedgerEntry(long lId, long eId) {
         this.ledgerId = lId;
@@ -60,23 +54,23 @@ public class LedgerEntry {
     }
 
     public byte[] getEntry() {
-        try {
-            // In general, you can't rely on the available() method of an input
-            // stream, but ChannelBufferInputStream is backed by a byte[] so it
-            // accurately knows the # bytes available
-            byte[] ret = new byte[entryDataStream.available()];
-            entryDataStream.readFully(ret);
-            return ret;
-        } catch (IOException e) {
-            // The channelbufferinput stream doesnt really throw the
-            // ioexceptions, it just has to be in the signature because
-            // InputStream says so. Hence this code, should never be reached.
-            LOG.error("Unexpected IOException while reading from channel buffer", e);
-            return new byte[0];
-        }
+        byte[] entry = new byte[data.readableBytes()];
+        data.readBytes(entry);
+        data.release();
+        return entry;
     }
 
     public InputStream getEntryInputStream() {
-        return entryDataStream;
+        return new ByteBufInputStream(data);
+    }
+
+    /**
+     * Return the internal buffer that contains the entry payload.
+     * <p>
+     *
+     * Note: It is responsibility of the caller to ensure to release the buffer after usage.
+     */
+    public ByteBuf getEntryBuffer() {
+        return data;
     }
 }

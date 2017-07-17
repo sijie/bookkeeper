@@ -17,8 +17,11 @@
  */
 package org.apache.bookkeeper.proto;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
+import io.netty.util.ReferenceCountUtil;
+
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -28,7 +31,6 @@ import org.apache.bookkeeper.bookie.Bookie;
 import org.apache.bookkeeper.bookie.BookieException;
 import org.apache.bookkeeper.proto.BookieProtocol.Request;
 import org.apache.bookkeeper.util.MathUtils;
-import org.jboss.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,14 +47,16 @@ class ReadEntryProcessor extends PacketProcessorBase {
         assert (request instanceof BookieProtocol.ReadRequest);
         BookieProtocol.ReadRequest read = (BookieProtocol.ReadRequest) request;
 
-        LOG.debug("Received new read request: {}", request);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Received new read request: {}", request);
+        }
         int errorCode = BookieProtocol.EIO;
         long startTimeNanos = MathUtils.nowInNano();
-        ByteBuffer data = null;
+        ByteBuf data = null;
         try {
             Future<Boolean> fenceResult = null;
             if (read.isFencingRequest()) {
-                LOG.warn("Ledger " + request.getLedgerId() + " fenced by " + channel.getRemoteAddress());
+                LOG.warn("Ledger: {}  fenced by: {}", request.getLedgerId(), channel.remoteAddress());
 
                 if (read.hasMasterKey()) {
                     fenceResult = requestProcessor.bookie.fenceLedger(read.getLedgerId(), read.getMasterKey());
@@ -62,7 +66,9 @@ class ReadEntryProcessor extends PacketProcessorBase {
                 }
             }
             data = requestProcessor.bookie.readEntry(request.getLedgerId(), request.getEntryId());
-            LOG.debug("##### Read entry ##### {}", data.remaining());
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("##### Read entry ##### {} -- ref-count: {}", data.readableBytes(), data.refCnt());
+            }
             if (null != fenceResult) {
                 // TODO:
                 // currently we don't have readCallback to run in separated read
@@ -117,8 +123,9 @@ class ReadEntryProcessor extends PacketProcessorBase {
             errorCode = BookieProtocol.EUA;
         }
 
-        LOG.trace("Read entry rc = {} for {}",
-                new Object[] { errorCode, read });
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("Read entry rc = {} for {}", new Object[] { errorCode, read });
+        }
         if (errorCode == BookieProtocol.EOK) {
             requestProcessor.readEntryStats.registerSuccessfulEvent(MathUtils.elapsedNanos(startTimeNanos),
                     TimeUnit.NANOSECONDS);
@@ -126,6 +133,8 @@ class ReadEntryProcessor extends PacketProcessorBase {
                          requestProcessor.readRequestStats);
 
         } else {
+            ReferenceCountUtil.release(data);
+
             requestProcessor.readEntryStats.registerFailedEvent(MathUtils.elapsedNanos(startTimeNanos),
                     TimeUnit.NANOSECONDS);
             sendResponse(errorCode, ResponseBuilder.buildErrorResponse(errorCode, read),

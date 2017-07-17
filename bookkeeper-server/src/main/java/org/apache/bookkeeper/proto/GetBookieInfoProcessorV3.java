@@ -28,9 +28,10 @@ import org.apache.bookkeeper.proto.BookkeeperProtocol.Request;
 import org.apache.bookkeeper.proto.BookkeeperProtocol.Response;
 import org.apache.bookkeeper.proto.BookkeeperProtocol.StatusCode;
 import org.apache.bookkeeper.util.MathUtils;
-import org.jboss.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import io.netty.channel.Channel;
 
 public class GetBookieInfoProcessorV3 extends PacketProcessorBaseV3 implements Runnable {
     private final static Logger LOG = LoggerFactory.getLogger(GetBookieInfoProcessorV3.class);
@@ -54,7 +55,9 @@ public class GetBookieInfoProcessorV3 extends PacketProcessorBaseV3 implements R
             return getBookieInfoResponse.build();
         }
 
-        LOG.debug("Received new getBookieInfo request: {}", request);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Received new getBookieInfo request: {}", request);
+        }
         StatusCode status = StatusCode.EOK;
         long freeDiskSpace = 0L, totalDiskSpace = 0L;
         if ((requested & GetBookieInfoRequest.Flags.FREE_DISK_SPACE_VALUE) != 0) {
@@ -65,7 +68,10 @@ public class GetBookieInfoProcessorV3 extends PacketProcessorBaseV3 implements R
             totalDiskSpace = requestProcessor.bookie.getTotalDiskSpace();
             getBookieInfoResponse.setTotalDiskCapacity(totalDiskSpace);
         }
-        LOG.debug("FreeDiskSpace info is " + freeDiskSpace + " totalDiskSpace is: " + totalDiskSpace);
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("FreeDiskSpace info is " + freeDiskSpace + " totalDiskSpace is: " + totalDiskSpace);
+        }
         getBookieInfoResponse.setStatus(status);
         requestProcessor.getBookieInfoStats.registerSuccessfulEvent(MathUtils.elapsedNanos(startTimeNanos),
                 TimeUnit.NANOSECONDS);
@@ -85,6 +91,6 @@ public class GetBookieInfoProcessorV3 extends PacketProcessorBaseV3 implements R
                 .setGetBookieInfoResponse(getBookieInfoResponse);
         sendResponse(response.getStatus(),
                      response.build(),
-                     requestProcessor.getBookieInfoStats);
+                     requestProcessor.getBookieInfoRequestStats);
     }
 }
