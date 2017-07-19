@@ -98,22 +98,11 @@ public class BookieServer {
         this.requestProcessor = new BookieRequestProcessor(conf, bookie,
                 statsLogger.scope(SERVER_SCOPE));
         this.nettyServer = new BookieNettyServer(this.conf, requestProcessor);
-        boolean success = false;
-        try {
-            this.bookie.initialize();
+        this.bookie.initialize();
 
-            isAutoRecoveryDaemonEnabled = conf.isAutoRecoveryDaemonEnabled();
-            if (isAutoRecoveryDaemonEnabled) {
-                this.autoRecoveryMain = new AutoRecoveryMain(conf, statsLogger.scope(REPLICATION_SCOPE));
-            }
-            success = true;
-        } catch (IOException | KeeperException | InterruptedException | BookieException e) {
-            LOG.error("Failed to initialize bookie, shutting down the netty server", e);
-            throw e;
-        } finally {
-            if (!success) {
-                this.nettyServer.shutdown();
-            }
+        isAutoRecoveryDaemonEnabled = conf.isAutoRecoveryDaemonEnabled();
+        if (isAutoRecoveryDaemonEnabled) {
+            this.autoRecoveryMain = new AutoRecoveryMain(conf, statsLogger.scope(REPLICATION_SCOPE));
         }
     }
 

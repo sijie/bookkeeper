@@ -281,10 +281,12 @@ public class BookieInitializationTest extends BookKeeperClusterTestCase {
                               ce.getCause() instanceof BindException);            
             Assert.assertTrue("BKServer allowed duplicate startups!",
                     ce.getCause().getMessage().contains("Address already in use"));
-        } catch (IOException e) {
+        } catch (BindException e) {
             Assert.assertTrue("BKServer allowed duplicate Startups!",
-                    e.getMessage().contains("bind"));
+                    e.getMessage().contains("Address already in use"));
         }
+
+        bs1.shutdown();
     }
 
     /**
@@ -451,9 +453,13 @@ public class BookieInitializationTest extends BookKeeperClusterTestCase {
         File tmpDir = createTempDir("DiskCheck", "test");
 
         final ServerConfiguration conf = TestBKConfiguration.newServerConfiguration()
-                .setZkServers(zkUtil.getZooKeeperConnectString()).setZkTimeout(5000).setJournalDirName(tmpDir.getPath())
-                .setLedgerDirNames(new String[] { tmpDir.getPath() }).setDiskCheckInterval(1000)
-                .setLedgerStorageClass(SortedLedgerStorage.class.getName()).setAutoRecoveryDaemonEnabled(false);
+            .setZkServers(zkUtil.getZooKeeperConnectString())
+            .setZkTimeout(5000)
+            .setJournalDirName(tmpDir.getPath())
+            .setLedgerDirNames(new String[] { tmpDir.getPath() })
+            .setDiskCheckInterval(1000)
+            .setLedgerStorageClass(SortedLedgerStorage.class.getName())
+            .setAutoRecoveryDaemonEnabled(false);
 
         BookieServer server = new MockBookieServer(conf);
         server.start();

@@ -57,7 +57,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
  * </p>
  */
 class SyncThread {
-    private final static Logger LOG = LoggerFactory.getLogger(SyncThread.class);
+    private static final Logger LOG = LoggerFactory.getLogger(SyncThread.class);
 
     final ScheduledExecutorService executor;
     final int flushInterval;
@@ -168,7 +168,7 @@ class SyncThread {
      */
     @VisibleForTesting
     public void suspendSync() {
-        synchronized(suspensionLock) {
+        synchronized (suspensionLock) {
             suspended = true;
         }
     }
@@ -178,7 +178,7 @@ class SyncThread {
      */
     @VisibleForTesting
     public void resumeSync() {
-        synchronized(suspensionLock) {
+        synchronized (suspensionLock) {
             suspended = false;
             suspensionLock.notify();
         }
