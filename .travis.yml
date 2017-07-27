@@ -51,7 +51,7 @@ deploy:
     on:
       # TODO: change this to apache 
       repo: sijie/bookkeeper
-      # tags: true
+      tags: true
   - 
     provider: releases
     api_key:
@@ -65,4 +65,4 @@ deploy:
     on:
       # TODO: change this to apache 
       repo: sijie/bookkeeper
-      # tags: true
+      tags: true
