@@ -27,19 +27,13 @@ ORIGIN_REPO=$(git remote show origin | grep 'Push  URL' | awk -F// '{print $NF}'
 echo "ORIGIN_REPO: $ORIGIN_REPO"
 
 (
-  cd $APACHE_GENERATED_DIR
+  cd $ROOT_DIR
 
-  git init
-  git config user.name "Apache BookKeeper Site Updater"
-  git config user.email "dev@bookkeeper.apache.org"
+  git checkout asf-site
+  git pull origin asf-site
+  cp -r $APACHE_GENERATED_DIR/content content
 
-  git remote add upstream "https://$ORIGIN_REPO"
-  git fetch upstream
-  git reset upstream/asf-site
-
-  touch .
-
-  git add -A .
+  git add -A content
   git commit -m "Updated site at revision $REVISION"
-  git push -q upstream HEAD:asf-site
+  # git push origin asf-site
 )
