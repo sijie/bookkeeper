@@ -41,7 +41,7 @@ public class LedgerFragment {
     private final DistributionSchedule schedule;
     private final boolean isLedgerClosed;
 
-    LedgerFragment(LedgerHandle lh,
+    public LedgerFragment(LedgerHandle lh,
                    long firstEntryId,
                    long lastKnownEntryId,
                    Set<Integer> bookieIndexes) {

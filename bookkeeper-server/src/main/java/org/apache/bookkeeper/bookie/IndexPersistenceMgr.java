@@ -35,6 +35,7 @@ import io.netty.buffer.ByteBuf;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -272,6 +273,13 @@ public class IndexPersistenceMgr {
      * Client. This is called only once during initialization.
      */
     private void getActiveLedgers() throws IOException {
+        for (Long ledgerId: scanIndexDirs()) {
+            activeLedgers.put(ledgerId, true);
+        }
+    }
+
+    List<Long> scanIndexDirs() throws IOException{
+        List<Long> ledgerIds = new ArrayList<>();
         // Ledger index files are stored in a file hierarchy with a parent and
         // grandParent directory. We'll have to go two levels deep into these
         // directories to find the index files.
@@ -316,13 +324,14 @@ public class IndexPersistenceMgr {
                                         }
                                     }
                                 }
-                                activeLedgers.put(Long.parseLong(ledgerIdInHex, 16), true);
+                                ledgerIds.add(Long.parseLong(ledgerIdInHex, 16));
                             }
                         }
                     }
                 }
             }
-        }
+    }
+    return ledgerIds;
     }
 
     /**
