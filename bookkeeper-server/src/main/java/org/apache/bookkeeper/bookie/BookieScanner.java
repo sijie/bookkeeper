@@ -174,7 +174,8 @@ public class BookieScanner {
         return result.get();
     }
 
-    // todo do we need caputure IOExceptions thrown by getLastAddConfirmed in LedgerStorage, which is a part of indexFile
+    // todo do we need caputure IOExceptions thrown by getLastAddConfirmed in LedgerStorage,
+    // which is a part of indexFile
     void addToSuspiciousLedgers(long ledgerId) {
         suspiciousLedgers.add(ledgerId);
     }
@@ -204,15 +205,10 @@ public class BookieScanner {
     }
 
     // scan entry log to verify which ledger are corrupt, compare metadata(from metaStore) and entrylog's info
-    // todo should this include normal scan only or include suspicous also
-    void scanEntryLogs() {
-
-
-    }
     /**
      * Scan the  suspicious entryLogs and find the corrupt item.
      */
-    void scanSuspiciousEntryLogs() {
+    void scanEntryLogs() {
         // we should first guarantee the ledger index file is not corrupt
         suspiciousEntryLogs.forEach((Consumer<Long>) entryLogId -> {
 
@@ -268,59 +264,21 @@ public class BookieScanner {
         );
 
     }
-
     /**
-     * Scan the index files to check the suspicious ledgers and find the corrupt item.
+     *Scan the index files and entryLogs and mark the suspicious ones.
      */
-    void scanSuspiciousLedgers() {
-
-    }
-
-    /**
-     * Scan the index files and suspicious entryLogs and mark the corrupt items.
-     */
-    void scanAndMark() {
-        scanSuspiciousLedgers();
-        scanSuspiciousEntryLogs();
+    void scanAndMark() throws IOException{
+        scanIndexDirs();
+        scanEntryLogs();
     }
 
     //todo just add to UnderReplicationManager or fix directly, Replicator is designed for URM
-    // todo add fixtion to IndexFile
 
     /**
      * Fix the corrupt data using ReplicationWorker which is bound to UnderReplicationManager.
      */
     void fixCorrupt() {
 
-    }
-
-    /**
-     * Set the scan interval.
-     *
-     * @param interval
-     */
-    void setScanInterval(int interval) {
-        this.scanInterval = interval;
-    }
-
-    public int getScanInterval() {
-        return scanInterval;
-    }
-
-    /**
-     * Set the cursor persistent interval.
-     *
-     * @param interval
-     */
-    void setPersistentInterval(int interval) {
-        this.persistentInterval = interval;
-    }
-
-    /**
-     * Get cursor persistent interval.
-     */
-    public int getPersistentInterval() {
-        return persistentInterval;
     }
 
     @VisibleForTesting
@@ -357,6 +315,7 @@ public class BookieScanner {
      */
     void triggerFixIndex() {
         fixer.fixIndexFileMissing();
+        fixer.fixCorruptIndexItemByScan();
     }
 
     /**
@@ -366,7 +325,12 @@ public class BookieScanner {
 
     }
 
-// scan regular ledgers
+    /**
+     * Shutdown the Scanner.
+     */
+    void shutdown() {
+        fixer.shutdown();
+    }
 
     /**
      * Fixer used to fix partial corrupt ledger, includes index file and entry log.
@@ -650,6 +614,20 @@ public class BookieScanner {
                     }
                 }
             };
+        }
+
+        /**
+         * Shutdown the fixer.
+         */
+        void shutdown() {
+            if (zk != null) {
+                try {
+                    zk.close();
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+                zk = null;
+            }
         }
     }
 
