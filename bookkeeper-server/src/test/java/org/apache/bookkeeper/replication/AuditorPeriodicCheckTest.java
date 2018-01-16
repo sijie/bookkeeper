@@ -223,6 +223,53 @@ public class AuditorPeriodicCheckTest extends BookKeeperClusterTestCase {
     }
 
     /**
+     * test that the period checker will detect corruptions in
+     * the bookie index files.
+     */
+    @Test
+    public void testIndexMissing() throws Exception {
+        LedgerManagerFactory mFactory = LedgerManagerFactory.newLedgerManagerFactory(bsConfs.get(0), zkc);
+        LedgerUnderreplicationManager underReplicationManager = mFactory.newLedgerUnderreplicationManager();
+
+        LedgerHandle lh = bkc.createLedger(3, 3, DigestType.CRC32, "passwd".getBytes());
+        long ledgerToCorrupt = lh.getId();
+        for (int i = 0; i < 100; i++) {
+            lh.addEntry("testdata".getBytes());
+        }
+        lh.close();
+
+        // push ledgerToCorrupt out of page cache (bookie is configured to only use 1 page)
+        lh = bkc.createLedger(3, 3, DigestType.CRC32, "passwd".getBytes());
+        for (int i = 0; i < 100; i++) {
+            lh.addEntry("testdata".getBytes());
+        }
+        lh.close();
+
+        BookieAccessor.forceFlush(bs.get(0).getBookie());
+
+        File ledgerDir = bsConfs.get(0).getLedgerDirs()[0];
+        ledgerDir = Bookie.getCurrentDirectory(ledgerDir);
+
+        // missing of index file
+        File index = new File(ledgerDir, IndexPersistenceMgr.getLedgerName(ledgerToCorrupt));
+        assertTrue(index.exists());
+        LOG.info("file to corrupt{}" , index);
+        assertTrue(index.delete());
+
+
+        long underReplicatedLedger = -1;
+        for (int i = 0; i < 10; i++) {
+            underReplicatedLedger = underReplicationManager.pollLedgerToRereplicate();
+            if (underReplicatedLedger != -1) {
+                break;
+            }
+            Thread.sleep(CHECK_INTERVAL * 1000);
+        }
+        assertEquals("Ledger should be under replicated", ledgerToCorrupt, underReplicatedLedger);
+        underReplicationManager.close();
+    }
+
+    /**
      * Test that the period checker will not run when auto replication has been disabled.
      */
     @Test

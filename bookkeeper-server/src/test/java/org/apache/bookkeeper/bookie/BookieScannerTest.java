@@ -18,11 +18,26 @@
 
 package org.apache.bookkeeper.bookie;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import io.netty.buffer.ByteBuf;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.ByteBuffer;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.bookkeeper.client.BKException;
+import org.apache.bookkeeper.client.BookKeeper;
+import org.apache.bookkeeper.client.LedgerHandle;
+import org.apache.bookkeeper.net.BookieSocketAddress;
+import org.apache.bookkeeper.proto.BookieServer;
+import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 
 /**
  * Test for BookieScanner.
@@ -34,56 +49,177 @@ public class BookieScannerTest extends BookKeeperClusterTestCase{
 
     public BookieScannerTest() {
         super(3);
-        bookieScanner = null;
+        baseConf.setPageLimit(1); // to make it easy to push ledger out of cache
+        baseConf.setAutoRecoveryDaemonEnabled(true);
+
     }
     @Before
-    void setup(){
-        baseConf.setAutoRecoveryDaemonEnabled(true);
+    public void setup(){
     }
+    // todo create a test case where LedgerChecker can't find and the scanner can find
+
     @Test
-    void testIndexFileMissing(){
+    public void testIndexFileMissing() throws Exception{
         // create an index file, assume the meta store has persist the ledger info
-        long ledgerId = 0;
+        LedgerHandle lh = bkc.createLedger(3, 3, BookKeeper.DigestType.CRC32, "passwd".getBytes());
+        long ledgerToDelete = lh.getId();
+        long entryIds[] = new long[100];
+        for (int i = 0; i < 100; i++) {
+            entryIds[i] = lh.addEntry("testdata".getBytes());
+        }
+        lh.close();
+
+        // push ledgerToCorrupt out of page cache (bookie is configured to only use 1 page)
+        lh = bkc.createLedger(3, 3, BookKeeper.DigestType.CRC32, "passwd".getBytes());
+        for (int i = 0; i < 100; i++) {
+            lh.addEntry("testdata".getBytes());
+        }
+        lh.close();
+
+        //flush the index file to disk
+        BookieAccessor.forceFlush(bs.get(0).getBookie());
+
+        File ledgerDir = bsConfs.get(0).getLedgerDirs()[0];
+        ledgerDir = Bookie.getCurrentDirectory(ledgerDir);
         // delete the index file
+        File index = new File(ledgerDir, IndexPersistenceMgr.getLedgerName(ledgerToDelete));
+        assertTrue(index.exists());
+        LOG.info("file to delete{}" , index);
+        assertTrue(index.delete());
 
+        final CountDownLatch completeLatch = new CountDownLatch(100);
+        final AtomicInteger rc = new AtomicInteger(BKException.Code.OK);
+        BookieSocketAddress addr = Bookie.getBookieAddress(bsConfs.get(0));
         // access the ledger fail
-//        assertFalse();
+        for (int i = 0; i < 100; i++) {
+            bkc.getBookieClient().readEntry(addr, ledgerToDelete, entryIds[i],
+                    new BookkeeperInternalCallbacks.ReadEntryCallback() {
+                @Override
+                public void readEntryComplete(int rc2, long ledgerId, long entryId, ByteBuf buffer, Object ctx) {
+                    if (rc.compareAndSet(BKException.Code.OK, rc2)) {
+                        LOG.info("Failed to read entry: {}:{}, reason: {}",
+                                ledgerId, entryId, BKException.getMessage(rc2));
+                    } else {
+                        LOG.info("Failed to read entry : {} again", BKException.getMessage(rc2));
+                    }
+                    completeLatch.countDown();
+                }
+            }, addr);
+        }
+        completeLatch.await();
+//        // using ledgerStorage to read data
+//        for (int i = 0; i < 100; i++) {
+//            getLedgerStorage(0).getEntry(ledgerToDelete, entryIds[i]);
+//        }
+        assertFalse("The ledger is expected under-replicated", rc.get() == BKException.Code.OK);
 
         // check the ledger is put into the suspicious list
-        bookieScanner.isLedgerInSuspiciousList(ledgerId);
+        assertTrue(bookieScanner.isLedgerInSuspiciousList(ledgerToDelete));
         // trigger the fixing
         bookieScanner.triggerFix();
         while (!bookieScanner.fixing.compareAndSet(false, true)){
 
         }
         // after fixed, access ledger again
-//        assertTrue();
-
+        final CountDownLatch successLatch = new CountDownLatch(100);
+        // access the ledger fail
+        for (int i = 0; i < 100; i++) {
+            bkc.getBookieClient().readEntry(bs.get(0).getLocalAddress(), ledgerToDelete, 1,
+                    new BookkeeperInternalCallbacks.ReadEntryCallback() {
+                @Override
+                public void readEntryComplete(int rc, long ledgerId, long entryId, ByteBuf buffer, Object ctx) {
+                    assertTrue(rc == BKException.Code.OK);
+                    successLatch.countDown();
+                }
+            }, bs.get(0).getLocalAddress());
+        }
+        successLatch.await();
     }
+
     @Test
-    void testIndexFileCorrupt(){
+    public void testIndexFileCorrupt() throws Exception{
         // create an index file, assume the meta store has persist the ledger info
-        long ledgerId = 0;
-        // corrupt the index file
+        LedgerHandle lh = bkc.createLedger(3, 3, BookKeeper.DigestType.CRC32, "passwd".getBytes());
+        long ledgerToCorrupt = lh.getId();
+        long entryIds[] = new long[100];
+        for (int i = 0; i < 100; i++) {
+            entryIds[i] = lh.addEntry("testdata".getBytes());
+        }
+        lh.close();
 
-        // access the ledger's last entry fail
-//        assertFalse();
+        // push ledgerToCorrupt out of page cache (bookie is configured to only use 1 page)
+        lh = bkc.createLedger(3, 3, BookKeeper.DigestType.CRC32, "passwd".getBytes());
+        for (int i = 0; i < 100; i++) {
+            lh.addEntry("testdata".getBytes());
+        }
+        lh.close();
 
-        // check the ledger is put into the suspicious list
-        bookieScanner.isLedgerInSuspiciousList(ledgerId);
+        BookieAccessor.forceFlush(bs.get(0).getBookie());
+        bookieScanner = getBookieScanner(0);
+
+        File ledgerDir = bsConfs.get(0).getLedgerDirs()[0];
+        ledgerDir = Bookie.getCurrentDirectory(ledgerDir);
+        // corrupt of index file
+        File index = new File(ledgerDir, IndexPersistenceMgr.getLedgerName(ledgerToCorrupt));
+        LOG.info("file to corrupt{}" , index);
+        ByteBuffer junk = ByteBuffer.allocate(1024 * 1024);
+        FileOutputStream out = new FileOutputStream(index);
+        out.getChannel().write(junk);
+        out.close();
+
+        final CountDownLatch completeLatch = new CountDownLatch(100);
+        final AtomicInteger rc = new AtomicInteger(BKException.Code.OK);
+        BookieSocketAddress addr = Bookie.getBookieAddress(bsConfs.get(0));
+        // access the ledger fail
+        for (int i = 0; i < 100; i++) {
+            bkc.getBookieClient().readEntry(addr, ledgerToCorrupt, entryIds[i],
+                    new BookkeeperInternalCallbacks.ReadEntryCallback() {
+                @Override
+                public void readEntryComplete(int rc2, long ledgerId, long entryId, ByteBuf buffer, Object ctx) {
+                    if (rc.compareAndSet(BKException.Code.OK, rc2)) {
+                        LOG.info("Failed to read entry: {}:{}, reason: {}",
+                                ledgerId, entryId, BKException.getMessage(rc2));
+                    } else {
+                        LOG.info("Failed to read entry : {} again", BKException.getMessage(rc2));
+                    }
+                    completeLatch.countDown();
+                }
+            }, addr);
+        }
+        completeLatch.await();
+        assertFalse(rc.get() == BKException.Code.OK);
+
         // trigger the fixing
         bookieScanner.triggerFix();
         while (!bookieScanner.fixing.compareAndSet(false, true)){
-
+            LOG.info("fixing...");
         }
         // after fixed, access ledger again
-//        assertTrue();
-
+        final CountDownLatch successLatch = new CountDownLatch(100);
+        final AtomicInteger successRc = new AtomicInteger(BKException.Code.OK);
+        // access the ledger fail
+        for (int i = 0; i < 100; i++) {
+            bkc.getBookieClient().readEntry(bs.get(0).getLocalAddress(), ledgerToCorrupt, 1,
+                    new BookkeeperInternalCallbacks.ReadEntryCallback() {
+                @Override
+                public void readEntryComplete(int rc, long ledgerId, long entryId, ByteBuf buffer, Object ctx) {
+                    if (successRc.compareAndSet(BKException.Code.OK, rc)) {
+                        LOG.info("Failed to read entry: {}:{}, reason: {}",
+                                ledgerId, entryId, BKException.getMessage(rc));
+                    } else {
+                        LOG.info("Failed to read entry : {} again", BKException.getMessage(rc));
+                    }
+                    successLatch.countDown();
+                }
+            }, bs.get(0).getLocalAddress());
+        }
+        successLatch.await();
+        assertTrue(successRc.get() == BKException.Code.OK);
     }
 
     // Mock Fixer to recover entry log
     @Test
-    void testEntryLogMissing(){
+    public void testEntryLogMissing(){
         // create an entry log, and record entry offset info
         long entryLogId = 0;
         // delete the entry log
@@ -103,7 +239,7 @@ public class BookieScannerTest extends BookKeeperClusterTestCase{
     }
 
     @Test
-    void testEntryLogCorrupt(){
+    public void testEntryLogCorrupt(){
         // create an entry log, and record entry offset info
         long entryLogId = 0;
         // delete the entry log
@@ -120,5 +256,23 @@ public class BookieScannerTest extends BookKeeperClusterTestCase{
         }
         // after fixed, access entry again
 //        assertTrue();
+    }
+
+    /**
+     * get the scanner for the specific bs.
+     * @return
+     */
+    private BookieScanner getBookieScanner(int index) {
+        BookieServer server = bs.get(index);
+        return ((InterleavedLedgerStorage) server.getBookie().ledgerStorage).scanner;
+    }
+
+    /**
+     * get the LedgerStorage for the specific bs.
+     * @return
+     */
+    private InterleavedLedgerStorage getLedgerStorage(int index) {
+        BookieServer server = bs.get(index);
+        return (InterleavedLedgerStorage) server.getBookie().ledgerStorage;
     }
 }

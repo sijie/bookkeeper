@@ -34,8 +34,8 @@ import java.util.SortedMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Consumer;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.BookKeeperAdmin;
@@ -50,7 +50,9 @@ import org.apache.bookkeeper.meta.LedgerUnderreplicationManager;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks;
 import org.apache.bookkeeper.replication.ReplicationException;
+import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
+import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.collections.ConcurrentOpenHashSet;
 import org.apache.bookkeeper.zookeeper.ZooKeeperClient;
 import org.apache.commons.lang3.tuple.Pair;
@@ -62,7 +64,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Responsible for scanning ledger index files and entry logs to keep data's integrity.
  */
-public class BookieScanner {
+class BookieScanner {
     private static final Logger LOG = LoggerFactory.getLogger(BookieScanner.class);
 
     private final ServerConfiguration conf;
@@ -72,7 +74,7 @@ public class BookieScanner {
     final LedgerManager ledgerManager;
     private final BookieSocketAddress selfBookieAddress;
 
-    // includes ledgers whose index file is missing
+    // includes ledgers whose index file is missing or losing entry in entry log file
     private ConcurrentOpenHashSet<Long> suspiciousLedgers;
     // contains corrupt index from offset to entry: entryKeyOffset -/-> entry
     private ConcurrentHashMap<Long, Set<Long>> corruptIndexLedgers;
@@ -94,6 +96,11 @@ public class BookieScanner {
     private final Fixer fixer;
     // Expose Stats
     private final StatsLogger statsLogger;
+    // Scanner Operation Latency Stats
+    private final OpStatsLogger scanIndexDirsStats;
+    private final OpStatsLogger scanEntryLogsStats;
+    private final OpStatsLogger fixIndicesStats;
+    private final OpStatsLogger fixEntryLogsStats;
 
     public BookieScanner(ServerConfiguration conf, CompactableLedgerStorage ledgerStorage, LedgerManager ledgerManager,
                          EntryLogger entryLogger, LedgerCache ledgerCache, StatsLogger statsLogger) throws IOException {
@@ -110,6 +117,15 @@ public class BookieScanner {
             LOG.warn("Facing exception {} when constructing Fixer at BookieScanner.", e);
             throw new IOException("Failed to instantiate Fixer at BookieScanner", e);
         }
+        suspiciousLedgers = new ConcurrentOpenHashSet<>();
+        corruptIndexLedgers = new ConcurrentHashMap<>();
+        corruptEntryIndices = new ConcurrentOpenHashSet<>();
+        corruptEntries = new ConcurrentOpenHashSet<>();
+        scanIndexDirsStats = statsLogger.getOpStatsLogger("scanIndexDirsStats");
+        scanEntryLogsStats = statsLogger.getOpStatsLogger("scanEntryLogsStats");
+        fixIndicesStats = statsLogger.getOpStatsLogger("fixIndicesStats");
+        fixEntryLogsStats = statsLogger.getOpStatsLogger("fixEntryLogsStats");
+
     }
 
     /**
@@ -118,6 +134,8 @@ public class BookieScanner {
      * use this bk as part of ensemble.
      */
     private void scanIndexDirs() throws IOException {
+        long beforeScanNanos = MathUtils.nowInNano();
+        boolean success = false;
         Set<Long> ledgersToCheck = new TreeSet<Long>();
         try {
             // Get a set of all ledgers on the bookie
@@ -139,16 +157,24 @@ public class BookieScanner {
                     }
                 }
             }
+            // check ledger's ensemble whether contains local bk
+            ledgersToCheck.forEach(ledgerId -> {
+                if (isSuspiciousLedger(ledgerId)) {
+                    addToSuspiciousLedgers(ledgerId);
+                }
+            });
+            success = true;
         } catch (Throwable t) {
             // ignore exception, check next time
             LOG.warn("Exception when iterating over the metadata {}", t);
-        }
-        // check ledger's ensemble whether contains local bk
-        ledgersToCheck.forEach(ledgerId -> {
-            if (isSuspiciousLedger(ledgerId)) {
-                addToSuspiciousLedgers(ledgerId);
+        } finally {
+            long elapsedNanos = MathUtils.elapsedNanos(beforeScanNanos);
+            if (success) {
+                scanIndexDirsStats.registerSuccessfulEvent(elapsedNanos, TimeUnit.NANOSECONDS);
+            } else {
+                scanIndexDirsStats.registerFailedEvent(elapsedNanos, TimeUnit.NANOSECONDS);
             }
-        });
+        }
     }
 
     /**
@@ -187,8 +213,9 @@ public class BookieScanner {
      * @param entryId  corrupt entry index's entryId
      */
     void addCorruptIndexItem(long ledgerId, long entryId) {
+        // used for fixing plan A
         corruptEntryIndices.add(Pair.of(ledgerId, entryId));
-
+        // used by fixing plan B
         Set<Long> values = corruptIndexLedgers.get(ledgerId);
         if (values != null) {
             values.add(entryId);
@@ -207,63 +234,94 @@ public class BookieScanner {
     // scan entry log to verify which ledger are corrupt, compare metadata(from metaStore) and entrylog's info
     /**
      * Scan the  suspicious entryLogs and find the corrupt item.
+     * Transfer entryLog's problem to suspicious ledger problem.
      */
     void scanEntryLogs() {
-        // we should first guarantee the ledger index file is not corrupt
-        suspiciousEntryLogs.forEach((Consumer<Long>) entryLogId -> {
+        suspiciousEntryLogs.forEach(entryLogId -> extractEntryLogMetadataAndFindCorrupt(entryLogId));
+    }
 
-                    try {
-                        entryLogger.scanEntryLog(entryLogId, new EntryLogger.EntryLogScanner() {
-                            @Override
-                            public boolean accept(long ledgerId) {
-                                return true;
-//                EntryLogMetadata metadata = null;
-//                try {
-//                    metadata = entryLogger.getEntryLogMetadata(entryLogId);
-//                } catch (Exception e){
-//                    LOG.error("Get EntryLogMetadata from {} fail",entryLogId);
-//                }
-//                return metadata.containsLedger(ledgerId);
-                            }
 
-                            //first compare scanned info to entryLogMetada, add suspicous Ledgers;
-                            // then delete the ledgers, to trigger URM Replicator(should first check auditor's info)
-                            // the above plan has a heavy io and network.
-                            // we need a fine granurity way: if just a few entry corrupt, we can retrive it from replica
+    //first compare scanned info to entryLogMetada, add suspicous Ledgers;
+    // then delete the ledgers, to trigger URM Replicator(should first check auditor's info)
+    // the above plan has a heavy io and network.
+    // we need a fine granurity way: if just a few entry corrupt, we can retrive it from replica
 //                    and update offset info; if a lot entries of a entry log corrupt,
 // we should use a more efficient way,
 //                    such as let Replicator to deal it by deleting ledgers
-                            @Override
-                            public void process(long ledgerId, long offset, ByteBuf entry) {
-                                synchronized (BookieScanner.this) {
-                                    long lid = entry.getLong(entry.readerIndex());
-                                    long entryId = entry.getLong(entry.readerIndex() + 8);
 
-                                    if (lid != ledgerId || entryId < -1) {
-                                        LOG.warn("Scanning expected ledgerId {}, but found invalid entry "
-                                                        + "with ledgerId {} entryId {} at offset {}",
-                                                ledgerId, lid, entryId, offset);
-                                        // mark the ledger
-                                        if (entryId < -1) {
-                                            addToSuspiciousLedgers(ledgerId);
-                                        } else {
-                                            // mark the data as deprecated to avoid IOException,
-                                            // and mark the entry, so we can update its offset
-                                            // entryLogger.markDataDeprecated,
-                                            // todo how to change the entry's state to deprecate effiently?
-                                            corruptEntries.add(Pair.of(ledgerId, entryId));
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    } catch (IOException ioe) {
-                        throw new UncheckedIOException(ioe);
+    /**
+     * Extract new meta and compare it with old meta if it exists.
+     * Using an no exception thrown way to construct entry log meta and find the corrupt ledger.
+     * @param entryLogId
+     * @return
+     */
+    private void extractEntryLogMetadataAndFindCorrupt(long entryLogId) {
+        final EntryLogMetadata newMeta = new EntryLogMetadata(entryLogId);
+        try {
+            // Read through the entry log file and extract the entry log meta
+            entryLogger.scanEntryLog(entryLogId, new EntryLogger.EntryLogScanner() {
+                @Override
+                public void process(long ledgerId, long offset, ByteBuf entry) {
+                    long lid = entry.getLong(entry.readerIndex());
+                    long entryId = entry.getLong(entry.readerIndex() + 8);
+
+                    if (lid != ledgerId || entryId < -1) {
+                        LOG.warn("Scanning expected ledgerId {}, but found invalid entry "
+                                        + "with ledgerId {} entryId {} at offset {}",
+                                ledgerId, lid, entryId, offset);
+                        // mark the ledger
+                        if (entryId < -1) {
+                            addToSuspiciousLedgers(ledgerId);
+                        } else {
+                            // and mark the entry, so we can update its offset
+                            // entryLogger.markDataDeprecated,
+                            corruptEntries.add(Pair.of(ledgerId, entryId));
+                        }
+                        // mark the data as deprecated to avoid IOException, and then extractMetaByScan
+                        // to get entryLog's new meta
+//                                        entryLogger.changeEntryState(long offset, )
+                        return;
                     }
-                }
-        );
+                    //todo checksum of entry, an design: use a map to keep ledgerId -> MacManager
 
+                    // only add new entry size of a ledger to entry log meta when all check passed
+                    newMeta.addLedgerSize(ledgerId, entry.readableBytes() + 4);
+                }
+
+                @Override
+                public boolean accept(long ledgerId) {
+                    return ledgerId > 0;
+                }
+            });
+        } catch (IOException ioe) {
+            LOG.error("scanEntryLog failed for entryLogId: {}", entryLogId, ioe);
+            //todo add to a  error entry log list whose item has several times error.
+            suspiciousEntryLogs.add(entryLogId);
+            return;
+        }
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("New entry log meta data entryLogId: {}, meta: {}", entryLogId, newMeta);
+        }
+        // compare with old meta
+        try {
+            EntryLogMetadata oldMeta = entryLogger.getEntryLogMetadata(entryLogId);
+            oldMeta.getLedgersMap().forEach((ledgerId, size) -> {
+                if (newMeta.containsLedger(ledgerId)) {
+                    if (newMeta.getLedgersMap().get(ledgerId) != size) {
+                        suspiciousLedgers.add(ledgerId);
+                    }
+                } else {
+                    suspiciousLedgers.add(ledgerId);
+                }
+            });
+        } catch (IOException ioe) {
+            LOG.error("get entry log meta data failed for entryLogId: {}", entryLogId, ioe);
+            //todo add to a  error entry log list whose item has several times error.
+            suspiciousEntryLogs.add(entryLogId);
+        }
+        // compare with LedgerManager's ledger meta,todo need fine granularity, eg. ledgerFragment
     }
+
     /**
      *Scan the index files and entryLogs and mark the suspicious ones.
      */
@@ -339,7 +397,7 @@ public class BookieScanner {
         private ZooKeeper zk = null;
         private LedgerUnderreplicationManager ledgerUnderreplicationManager;
         List<EntryLocation> offsets = new ArrayList<EntryLocation>();
-        List<Long> entryLogs = new ArrayList<Long>();
+        Set<Long> candidateEntryLogs = new HashSet<>();
 
         // todo keep the zk, bk, admin client alive always or create them when fixing?
         public Fixer() throws IOException, KeeperException, InterruptedException {
@@ -356,12 +414,12 @@ public class BookieScanner {
             }
         }
 
-        //replicate the fragments to new bookie is better, because use current bookie
+        //replicate the fragments to new bookie is better, because using current bookie
         // can cause data leak, where old data in current bookie is not released,
         // if use other bookie, current bookie's overReplicated data can be compacted.
 
         /**
-         * When index file is missing, we add the ledger to UnderReplicatedManager
+         * When index file is missing, we add the ledger to UnderReplicatedManager.
          * if the AutoRecovery is enable, then the always running ReplicationWorker
          * will replicate these ledgers to create new index file in other node.
          */
@@ -389,6 +447,7 @@ public class BookieScanner {
 
         /**
          * Fix corrupt index item by re-add entry and update their locations.
+         * fixing plan A
          */
         private void fixCorruptIndexItemByReplay() throws IOException{
 
@@ -426,22 +485,35 @@ public class BookieScanner {
 
         /**
          * Fix corrupt index item by scan entry log and update their locations.
+         * fixing plan B
          */
         private void fixCorruptIndexItemByScan() {
-            for (long entryLogId : entryLogs) {
+            try {
+                chooseEntryLogs();
+            } catch (Exception e) {
+                LOG.error("occur error when preparing entryLogs for fixing Plan B", e);
+                return;
+            }
+            for (long entryLogId : candidateEntryLogs) {
                 try {
-                    entryLogger.scanEntryLog(entryLogId, getScannerForFixing());
+                    entryLogger.scanEntryLog(entryLogId, getScannerForFixing(entryLogId));
                 } catch (LedgerDirsManager.NoWritableLedgerDirException nwlde) {
-                    LOG.warn("No writable ledger directory available, aborting compaction", nwlde);
+                    LOG.warn("No writable ledger directory available, aborting fixing", nwlde);
                 } catch (IOException ioe) {
                     // if compact entry log throws IOException, we don't want to remove that
                     // entry log. however, if some entries from that log have been re-added
                     // to the entry log, and the offset updated, it's ok to flush that
-                    LOG.error("Error compacting entry log. Log won't be deleted", ioe);
+                    LOG.error("Error scaning entry log.", ioe);
                 }
+            }
+            try {
+                flush();
+            } catch (IOException ioe) {
+                LOG.error("Error flushing new offsets for entryLogs:{}", candidateEntryLogs, ioe);
             }
         }
 
+        // todo improve logic efficiently
         /**
          * Get appropriate entry logs to scan by compare neighbor entry's entryLogId.
          */
@@ -450,19 +522,18 @@ public class BookieScanner {
             for (Map.Entry<Long, Set<Long>> entry: corruptIndexLedgers.entrySet()) {
                 long ledgerId = entry.getKey();
                 Set<Long> entryIds = entry.getValue();
+                final BookKeeper client = new BookKeeper(new ClientConfiguration(conf),
+                        zk);
+                final BookKeeperAdmin admin = new BookKeeperAdmin(client, statsLogger);
+                LedgerHandle lh = null;
+                lh = admin.openLedgerNoRecovery(ledgerId);
                 for (long entryId : entryIds) {
-                    final BookKeeper client = new BookKeeper(new ClientConfiguration(conf),
-                            zk);
-                    final BookKeeperAdmin admin = new BookKeeperAdmin(client, statsLogger);
-                    LedgerHandle lh = null;
-                    LedgerFragment fragment = null;
-                    lh = admin.openLedgerNoRecovery(ledgerId);
                     long rightEntryLogId = 0 , leftEntryLogId = 0;
                     // 1. find its fragment
                     int selfIndex = 0;
                     LedgerFragment curFragment, leftFragment, rightFragment;
                     try {
-                        Pair<LedgerFragment, Integer> pair = getFragment(lh, ledgerId, entryId);
+                        Pair<LedgerFragment, Integer> pair = getFragment(lh, entryId);
                         curFragment = leftFragment = rightFragment = pair.getLeft();
                         selfIndex = pair.getRight();
                         // continue deal next corrupt
@@ -470,32 +541,34 @@ public class BookieScanner {
                             continue;
                         }
                     } catch (Exception e) {
+                        LOG.warn("Occur Exception: {} when getFragment", e);
                         continue;
                     }
+                    LOG.warn("chooseEntryLogs for {} : {} in fragment: {}", ledgerId, entryId, leftFragment);
                     // 2. get its start entry in fragment
                     long left = leftFragment.getFirstStoredEntryId(selfIndex);
                     long leftOffset = 0;
-                    // 3. find start entryLogId for scanning
+                    // 3. find start entryLogId for scanning(because the fragment may relative to several entrylogs)
                     try {
                         leftOffset = ledgerCache.getEntryOffset(ledgerId, left);
                         // find the left alive entry's log id
                         while (leftOffset == 0) {
                             //maybe the entry offset in indexFile is corrupt, add into to update its' location later
                             BookieScanner.this.addCorruptIndexItem(ledgerId, left);
-
                             // move left forward
                             if (left < 1) {
                                 break;
                             }
-                            Pair<LedgerFragment, Integer> pair = getFragment(lh, ledgerId, left - 1);
+                            Pair<LedgerFragment, Integer> pair = getFragment(lh, left - 1);
                             leftFragment = pair.getLeft();
                             int selfLeftIndex = pair.getRight();
                             left = leftFragment.getFirstStoredEntryId(selfLeftIndex);
                             leftOffset = ledgerCache.getEntryOffset(ledgerId, left);
                         }
                         leftEntryLogId = EntryLogger.logIdForOffset(leftOffset);
-
+                        LOG.info("leftEntryLog id is {} ", leftEntryLogId);
                     } catch (IOException ioe) {
+                        LOG.info("occur exception: {}, when acculate leftEntryLog id", ioe);
                         if (ioe.getCause() instanceof Bookie.NoLedgerException) {
                             //read index file fail, skip this ledger and continue
                             BookieScanner.this.addToSuspiciousLedgers(ledgerId);
@@ -517,14 +590,14 @@ public class BookieScanner {
                             if (right == lh.getLastAddConfirmed()) {
                                 break;
                             }
-                            Pair<LedgerFragment, Integer> pair = getFragment(lh, ledgerId, right + 1);
+                            Pair<LedgerFragment, Integer> pair = getFragment(lh, right + 1);
                             rightFragment = pair.getLeft();
                             int selfRightIndex = pair.getRight();
                             right = leftFragment.getFirstStoredEntryId(selfRightIndex);
                             rightOffset = ledgerCache.getEntryOffset(ledgerId, left);
                         }
                         rightEntryLogId = EntryLogger.logIdForOffset(rightOffset);
-
+                        LOG.info("rightEntryLog id is {} ", rightEntryLogId);
                     } catch (IOException ioe) {
                         if (ioe.getCause() instanceof Bookie.NoLedgerException) {
                             //read index file fail, skip this ledger and continue
@@ -533,25 +606,20 @@ public class BookieScanner {
                             continue;
                         }
                     }
-                    // close lh
-                    if (lh != null) {
-                        try {
-                            lh.close();
-                        } catch (BKException bke) {
-                            LOG.warn("Couldn't close ledger " + ledgerId, bke);
-                        } catch (InterruptedException ie) {
-                            LOG.warn("Interrupted closing ledger " + ledgerId, ie);
-                            Thread.currentThread().interrupt();
-                        }
+                    for (long j = leftEntryLogId; j <= rightEntryLogId; j++) {
+                        candidateEntryLogs.add(j);
                     }
-                    if (leftOffset != 0 && rightOffset != 0) {
-                        for (long j = leftEntryLogId; j < rightEntryLogId; j++) {
-                            entryLogs.add(j);
-                        }
-                    } else if (leftOffset != 0) {
-                        entryLogs.add(leftEntryLogId);
-                    } else if (rightOffset != 0) {
-                        entryLogs.add(rightEntryLogId);
+
+                }
+                // close lh
+                if (lh != null) {
+                    try {
+                        lh.close();
+                    } catch (BKException bke) {
+                        LOG.warn("Couldn't close ledger " + ledgerId, bke);
+                    } catch (InterruptedException ie) {
+                        LOG.warn("Interrupted closing ledger " + ledgerId, ie);
+                        Thread.currentThread().interrupt();
                     }
                 }
 
@@ -560,25 +628,32 @@ public class BookieScanner {
 
         /**
          * Find the LedgerFragment of specific entry key.
-         * @param ledgerId
          * @param entryId
          * @return
          */
-        private Pair<LedgerFragment, Integer> getFragment(LedgerHandle lh, long ledgerId, long entryId) {
+        private Pair<LedgerFragment, Integer> getFragment(LedgerHandle lh, long entryId) {
             int selfIndex = 0;
+            LedgerFragment lastFragment = null;
             LedgerFragment fragment = null;
+            int location = 0;
             Set<Integer> bookieIndexes = null;
             Long lastEntryKey = null;
             Long curEntryKey = null;
             ArrayList<BookieSocketAddress> lastEnsemble = null;
+            long lac = lh.getLastAddConfirmed();
+            if (lac < entryId) {
+                LOG.error("Ledger {} 's lac is not less than entryId:{}", lh.getId(), entryId);
+            }
             for (Map.Entry<Long, ArrayList<BookieSocketAddress>> e : lh
                     .getLedgerMetadata().getEnsembles().entrySet()) {
+                // the entry is not in the first fragment
                 if (lastEntryKey != null) {
                     curEntryKey = e.getKey();
-//                                entryId is in last fragment
+//                                entryId is in previous fragment
                     if (curEntryKey > entryId) {
                         fragment = new LedgerFragment(lh, lastEntryKey,
                                 curEntryKey - 1, bookieIndexes);
+                        location = 1;
                         break;
                     }
                 }
@@ -591,26 +666,39 @@ public class BookieScanner {
                         selfIndex = i;
                     }
                 }
+
+                lac = lh.getLastAddConfirmed();
+                // the lac is not correct case
+                if (!lh.isClosed() && lac < lastEntryKey) {
+                    LOG.error("Ledger {} is open and the lac is not set yet", lh.getId());
+                } else {
+                    lastFragment = new LedgerFragment(lh, lastEntryKey,
+                            lac, bookieIndexes);
+                }
             }
-            return Pair.of(fragment, selfIndex);
+            if (location == 1) {
+                return Pair.of(fragment, selfIndex);
+            } else {
+                return Pair.of(lastFragment, selfIndex);
+            }
         }
 
         /**
          *Get scanner for fixing corrupt index file.
          */
-        private EntryLogger.EntryLogScanner getScannerForFixing() {
+        private EntryLogger.EntryLogScanner getScannerForFixing(long entryLogId) {
             return new EntryLogger.EntryLogScanner() {
                 @Override
                 public boolean accept(long ledgerId) {
-                    return entryLogs.contains(ledgerId);
+                    return corruptIndexLedgers.keySet().contains(ledgerId);
                 }
 
                 @Override
                 public void process(final long ledgerId, long offset, ByteBuf entry) throws IOException {
-
                     long entryId = entry.getLong(entry.readerIndex() + 8);
+                    // because the offset is relative to entryLogFile, and the offset is after `entrySize`
                     if (corruptIndexLedgers.get(ledgerId).contains(entryId)) {
-                        offsets.add(new EntryLocation(ledgerId, entryId, offset));
+                        offsets.add(new EntryLocation(ledgerId, entryId, ((entryLogId << 32L) | (offset + 4))));
                     }
                 }
             };

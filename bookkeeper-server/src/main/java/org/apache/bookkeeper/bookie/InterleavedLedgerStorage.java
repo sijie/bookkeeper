@@ -58,7 +58,7 @@ import org.slf4j.LoggerFactory;
 public class InterleavedLedgerStorage implements CompactableLedgerStorage, EntryLogListener {
     private static final Logger LOG = LoggerFactory.getLogger(InterleavedLedgerStorage.class);
 
-    private BookieScanner scanner;
+    BookieScanner scanner;
     EntryLogger entryLogger;
     LedgerCache ledgerCache;
     protected CheckpointSource checkpointSource;
@@ -308,6 +308,8 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
                 getOffsetStats.registerFailedEvent(MathUtils.elapsedNanos(startTimeNanos), TimeUnit.NANOSECONDS);
             }
         }
+        LOG.info("Get offset succeed for ledger: {} entry: {}", ledgerId, entryId);
+
         // Get Entry
         startTimeNanos = MathUtils.nowInNano();
         success = false;
