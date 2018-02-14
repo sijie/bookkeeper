@@ -23,6 +23,8 @@ package org.apache.bookkeeper.bookie;
 
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
+import java.util.List;
+
 import org.apache.bookkeeper.common.util.Watcher;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.stats.NullStatsLogger;
@@ -71,6 +73,13 @@ public class LedgerCacheImpl implements LedgerCache {
      */
     public int getPageSize() {
         return pageSize;
+    }
+
+    /**
+     * Scan Index dirs to find suspicious ledger.
+     */
+    List<Long> scanIndexDirs() throws IOException {
+        return indexPersistenceManager.scanIndexDirs();
     }
 
     @Override

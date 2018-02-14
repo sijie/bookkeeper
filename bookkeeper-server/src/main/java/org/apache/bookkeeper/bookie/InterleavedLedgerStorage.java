@@ -58,6 +58,8 @@ import org.slf4j.LoggerFactory;
 public class InterleavedLedgerStorage implements CompactableLedgerStorage, EntryLogListener {
     private static final Logger LOG = LoggerFactory.getLogger(InterleavedLedgerStorage.class);
 
+    private boolean enableScanner;
+    BookieScanner scanner;
     EntryLogger entryLogger;
     LedgerCache ledgerCache;
     protected CheckpointSource checkpointSource;
@@ -103,6 +105,10 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
         entryLogger = new EntryLogger(conf, ledgerDirsManager, this);
         ledgerCache = new LedgerCacheImpl(conf, activeLedgers,
                 null == indexDirsManager ? ledgerDirsManager : indexDirsManager, statsLogger);
+        enableScanner = conf.getBookieScannerEnabled();
+        if (enableScanner) {
+            scanner = new BookieScanner(conf, this, ledgerManager, entryLogger, ledgerCache, statsLogger);
+        }
         gcThread = new GarbageCollectorThread(conf, ledgerManager, this, statsLogger.scope("gc"));
         ledgerDirsManager.addLedgerDirsListener(getLedgerDirsListener());
         // Expose Stats
@@ -288,9 +294,21 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
         try {
             offset = ledgerCache.getEntryOffset(ledgerId, entryId);
             if (offset == 0) {
+                if (enableScanner) {
+                    //maybe the entry offset in indexFile is corrupt
+                    scanner.addCorruptIndexItem(ledgerId, entryId);
+                }
                 throw new Bookie.NoEntryException(ledgerId, entryId);
             }
             success = true;
+        } catch (IOException ioe) {
+            if (ioe.getCause() instanceof NoLedgerException) {
+                if (enableScanner) {
+                    //read index file fail
+                    scanner.addToSuspiciousLedgers(ledgerId);
+                }
+            }
+            throw ioe;
         } finally {
             if (success) {
                 getOffsetStats.registerSuccessfulEvent(MathUtils.elapsedNanos(startTimeNanos), TimeUnit.NANOSECONDS);
@@ -298,6 +316,8 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
                 getOffsetStats.registerFailedEvent(MathUtils.elapsedNanos(startTimeNanos), TimeUnit.NANOSECONDS);
             }
         }
+        LOG.info("Get offset {} succeed for ledger: {} entry: {}", offset, ledgerId, entryId);
+
         // Get Entry
         startTimeNanos = MathUtils.nowInNano();
         success = false;
@@ -305,6 +325,13 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
             ByteBuf retBytes = entryLogger.readEntry(ledgerId, entryId, offset);
             success = true;
             return retBytes;
+        } catch (IOException ioe) {
+            if (enableScanner) {
+                //entry log maybe corrupt
+                scanner.addToSuspiciousEntryLogs(EntryLogger.logIdForOffset(offset));
+                scanner.addToSuspiciousLedgers(ledgerId);
+            }
+            throw ioe;
         } finally {
             if (success) {
                 getEntryStats.registerSuccessfulEvent(MathUtils.elapsedNanos(startTimeNanos), TimeUnit.NANOSECONDS);

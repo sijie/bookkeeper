@@ -140,6 +140,8 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
     protected static final String ENABLE_LOCAL_TRANSPORT = "enableLocalTransport";
     protected static final String DISABLE_SERVER_SOCKET_BIND = "disableServerSocketBind";
 
+    protected static final String ENABLE_BOOKIE_SCANNER = "enableBookieScanner";
+
     protected static final String SORTED_LEDGER_STORAGE_ENABLED = "sortedLedgerStorageEnabled";
     protected static final String SKIP_LIST_SIZE_LIMIT = "skipListSizeLimit";
     protected static final String SKIP_LIST_CHUNK_SIZE_ENTRY = "skipListArenaChunkSize";
@@ -176,7 +178,6 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
 
     // Stats
     protected static final String ENABLE_TASK_EXECUTION_STATS = "enableTaskExecutionStats";
-
     /**
      * Construct a default configuration object.
      */
@@ -678,6 +679,26 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      */
     public ServerConfiguration setAllowLoopback(boolean allow) {
         this.setProperty(ALLOW_LOOPBACK, allow);
+        return this;
+    }
+
+    /**
+     * Get whether BookieScanner is enabled.
+     * @return whether BookieScanner is enabled
+     */
+    public boolean getBookieScannerEnabled() {
+        return this.getBoolean(ENABLE_BOOKIE_SCANNER, false);
+    }
+
+    /**
+     * Configure the bookie to enable BookieScanner.
+     *
+     * @see #getBookieScannerEnabled
+     * @param enabled whether to enable BookieScanner
+     * @return server configuration
+     */
+    public ServerConfiguration setBookieScannerEnabled(boolean enabled) {
+        this.setProperty(ENABLE_BOOKIE_SCANNER, enabled);
         return this;
     }
 
