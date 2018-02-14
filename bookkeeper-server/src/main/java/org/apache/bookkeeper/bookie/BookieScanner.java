@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
@@ -33,23 +34,25 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.BookKeeperAdmin;
+import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerFragment;
 import org.apache.bookkeeper.client.LedgerHandle;
 import org.apache.bookkeeper.client.LedgerMetadata;
 import org.apache.bookkeeper.conf.ClientConfiguration;
 import org.apache.bookkeeper.conf.ServerConfiguration;
+import org.apache.bookkeeper.discover.RegistrationManager;
 import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.meta.LedgerManagerFactory;
 import org.apache.bookkeeper.meta.LedgerUnderreplicationManager;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks;
 import org.apache.bookkeeper.replication.ReplicationException;
+import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.util.MathUtils;
@@ -75,17 +78,18 @@ class BookieScanner {
     private final BookieSocketAddress selfBookieAddress;
 
     // includes ledgers whose index file is missing or losing entry in entry log file
-    private ConcurrentOpenHashSet<Long> suspiciousLedgers;
-    // contains corrupt index from offset to entry: entryKeyOffset -/-> entry
-    private ConcurrentHashMap<Long, Set<Long>> corruptIndexLedgers;
-    private ConcurrentOpenHashSet<Pair<Long, Long>> corruptEntryIndices;
+    private final ConcurrentOpenHashSet<Long> suspiciousLedgers = new ConcurrentOpenHashSet<>();
+    // contains corrupt index in index file: entryKeyOffset -/-> entry
+    private final ConcurrentHashMap<Long, Set<Long>> corruptIndexLedgers = new ConcurrentHashMap<>();
     // corrupt entries in entryLog
-    private ConcurrentOpenHashSet<Pair<Long, Long>> corruptEntries;
-    //todo use what structures to store ledgers (heap?) and cursor ?
-    private ConcurrentHashMap<Long, ConcurrentHashMap<Long, LedgerFragment>> corruptFragments;
-    private ConcurrentOpenHashSet<Long> suspiciousEntryLogs;
-    private ConcurrentOpenHashSet<Long> corruptLedgers;
-    private ConcurrentOpenHashSet<Long> corruptEntryLogs;
+    private final ConcurrentOpenHashSet<Pair<Long, Long>> corruptEntries =
+            new ConcurrentOpenHashSet<>();
+    // todo use what structures to store ledgers (heap?) and cursor ?
+    private final ConcurrentHashMap<Long, ConcurrentHashMap<Long, LedgerFragment>>
+            corruptFragments = new ConcurrentHashMap<>();
+    private final ConcurrentOpenHashSet<Long> suspiciousEntryLogs = new ConcurrentOpenHashSet<>();
+    private final ConcurrentOpenHashSet<Long> corruptLedgers = new ConcurrentOpenHashSet<>();
+    private final ConcurrentOpenHashSet<Long> corruptEntryLogs = new ConcurrentOpenHashSet<>();
     private int scanCursor;
     // parameter for scanning, should pass to GCThread to control the scan frequency.
     private int scanInterval;
@@ -93,9 +97,13 @@ class BookieScanner {
 
     // flag to indicate fix is in progress
     final AtomicBoolean fixing = new AtomicBoolean(false);
-    private final Fixer fixer;
+    final Fixer fixer;
     // Expose Stats
     private final StatsLogger statsLogger;
+    private final Counter scannedLogsCounter;
+    private final Counter suspiciousLogsCounter;
+    private final Counter scannedIndicesCounter;
+    private final Counter suspiciousIndicesCounter;
     // Scanner Operation Latency Stats
     private final OpStatsLogger scanIndexDirsStats;
     private final OpStatsLogger scanEntryLogsStats;
@@ -117,21 +125,21 @@ class BookieScanner {
             LOG.warn("Facing exception {} when constructing Fixer at BookieScanner.", e);
             throw new IOException("Failed to instantiate Fixer at BookieScanner", e);
         }
-        suspiciousLedgers = new ConcurrentOpenHashSet<>();
-        corruptIndexLedgers = new ConcurrentHashMap<>();
-        corruptEntryIndices = new ConcurrentOpenHashSet<>();
-        corruptEntries = new ConcurrentOpenHashSet<>();
+        // Expose Stats
+        scannedLogsCounter = statsLogger.getCounter("scannedLogsCounter");
+        suspiciousLogsCounter = statsLogger.getCounter("suspiciousLogsCounter");
+        scannedIndicesCounter = statsLogger.getCounter("scannedIndicesCounter");
+        suspiciousIndicesCounter = statsLogger.getCounter("suspiciousIndicesCounter");
         scanIndexDirsStats = statsLogger.getOpStatsLogger("scanIndexDirsStats");
         scanEntryLogsStats = statsLogger.getOpStatsLogger("scanEntryLogsStats");
         fixIndicesStats = statsLogger.getOpStatsLogger("fixIndicesStats");
         fixEntryLogsStats = statsLogger.getOpStatsLogger("fixEntryLogsStats");
-
     }
 
     /**
      * Scan Index dirs to find suspicious ledger: find those should in local but not.
-     * Check ledger in (set(ledgersInMeta) - set(ledgersInLocal)) whether
-     * use this bk as part of ensemble.
+     * Check ledger in (set(ledgersInMetaStore) - set(ledgersInLocal))
+     * check whether ledger use this bk as part of its ensemble.
      */
     private void scanIndexDirs() throws IOException {
         long beforeScanNanos = MathUtils.nowInNano();
@@ -181,6 +189,7 @@ class BookieScanner {
      * Check whether the ledger is suspicious.
      */
     private boolean isSuspiciousLedger(long ledgerId) {
+        scannedIndicesCounter.inc();
         final AtomicBoolean result = new AtomicBoolean(false);
         ledgerManager.readLedgerMetadata(ledgerId, new BookkeeperInternalCallbacks.GenericCallback<LedgerMetadata>() {
             @Override
@@ -203,6 +212,7 @@ class BookieScanner {
     // todo do we need caputure IOExceptions thrown by getLastAddConfirmed in LedgerStorage,
     // which is a part of indexFile
     void addToSuspiciousLedgers(long ledgerId) {
+        suspiciousIndicesCounter.inc();
         suspiciousLedgers.add(ledgerId);
     }
 
@@ -213,21 +223,20 @@ class BookieScanner {
      * @param entryId  corrupt entry index's entryId
      */
     void addCorruptIndexItem(long ledgerId, long entryId) {
-        // used for fixing plan A
-        corruptEntryIndices.add(Pair.of(ledgerId, entryId));
-        // used by fixing plan B
         Set<Long> values = corruptIndexLedgers.get(ledgerId);
         if (values != null) {
             values.add(entryId);
             corruptIndexLedgers.put(ledgerId, values);
         } else {
-            Set<Long> enties = new ConcurrentSkipListSet<>();
+            Set<Long> enties = new TreeSet<>();
             enties.add(entryId);
             corruptIndexLedgers.put(ledgerId, enties);
         }
     }
 
+    //todo add a method to remove the fixed entryLog from suspicious list, and call it after fix
     void addToSuspiciousEntryLogs(long entryLogId) {
+        suspiciousLogsCounter.inc();
         suspiciousLedgers.add(entryLogId);
     }
 
@@ -256,6 +265,7 @@ class BookieScanner {
      * @return
      */
     private void extractEntryLogMetadataAndFindCorrupt(long entryLogId) {
+        scannedLogsCounter.inc();
         final EntryLogMetadata newMeta = new EntryLogMetadata(entryLogId);
         try {
             // Read through the entry log file and extract the entry log meta
@@ -330,8 +340,6 @@ class BookieScanner {
         scanEntryLogs();
     }
 
-    //todo just add to UnderReplicationManager or fix directly, Replicator is designed for URM
-
     /**
      * Fix the corrupt data using ReplicationWorker which is bound to UnderReplicationManager.
      */
@@ -348,8 +356,6 @@ class BookieScanner {
     boolean isEntryLogInSuspiciousList(long entryLogId) {
         return suspiciousEntryLogs.contains(entryLogId);
     }
-
-    // todo, which thread execute fixing is better? GCThread?
 
     /**
      * Trigger Fix action. When suspicious list hit some requirement, we can trigger fix.
@@ -392,28 +398,32 @@ class BookieScanner {
 
     /**
      * Fixer used to fix partial corrupt ledger, includes index file and entry log.
+     * Caller should guarantee only one thread access, as the `offsets` are designed for one thread.
      */
     class Fixer {
+        final BookKeeper client;
+        final BookKeeperAdmin admin;
         private ZooKeeper zk = null;
         private LedgerUnderreplicationManager ledgerUnderreplicationManager;
         List<EntryLocation> offsets = new ArrayList<EntryLocation>();
         Set<Long> candidateEntryLogs = new HashSet<>();
 
-        // todo keep the zk, bk, admin client alive always or create them when fixing?
-        public Fixer() throws IOException, KeeperException, InterruptedException {
+        // the caller of Fixer should guarantee only one thread calling
+        Fixer() throws Exception {
             zk = ZooKeeperClient.newBuilder().connectString(conf.getZkServers())
                     .sessionTimeoutMs(conf.getZkTimeout()).build();
-            try {
-                LedgerManagerFactory ledgerManagerFactory = LedgerManagerFactory
-                        .newLedgerManagerFactory(conf, zk);
-                this.ledgerUnderreplicationManager = ledgerManagerFactory
-                        .newLedgerUnderreplicationManager();
-            } catch (ReplicationException.CompatibilityException ce) {
-                throw new IOException(
-                        "CompatibilityException while initializing Fixer", ce);
+            try (RegistrationManager rm = RegistrationManager.instantiateRegistrationManager(conf)) {
+                try (LedgerManagerFactory mFactory =
+                             LedgerManagerFactory.newLedgerManagerFactory(conf, rm.getLayoutManager())) {
+                    this.ledgerUnderreplicationManager = mFactory
+                            .newLedgerUnderreplicationManager();
+                }
             }
+            ClientConfiguration clientConfiguration = new ClientConfiguration();
+            clientConfiguration.addConfiguration(conf);
+            client = new BookKeeper(clientConfiguration, zk);
+            admin = new BookKeeperAdmin(client, statsLogger);
         }
-
         //replicate the fragments to new bookie is better, because using current bookie
         // can cause data leak, where old data in current bookie is not released,
         // if use other bookie, current bookie's overReplicated data can be compacted.
@@ -423,7 +433,8 @@ class BookieScanner {
          * if the AutoRecovery is enable, then the always running ReplicationWorker
          * will replicate these ledgers to create new index file in other node.
          */
-        private void fixIndexFileMissing() {
+        //todo remove the index file from suspicious list when URM fixed it.
+        void fixIndexFileMissing() {
             if (null == suspiciousLedgers || suspiciousLedgers.size() == 0) {
                 // there is no suspiciousledgers available for this bookie and just
                 // ignoring the bookie failures
@@ -447,47 +458,48 @@ class BookieScanner {
 
         /**
          * Fix corrupt index item by re-add entry and update their locations.
-         * fixing plan A
+         * fixing plan A 4 corrupt index item
          */
-        private void fixCorruptIndexItemByReplay() throws IOException{
-
-            corruptEntryIndices.forEach(pair -> {
-                // todo retrieve entries
-                ByteBuf entry = Unpooled.wrappedBuffer(new byte[5]);
-                try {
-                    long newoffset = entryLogger.addEntry(pair.getLeft(), entry);
-                    offsets.add(new EntryLocation(pair.getLeft(), pair.getRight(), newoffset));
-
-                } catch (IOException ioe) {
-
+        void fixCorruptIndexItemByReplay() throws Exception{
+            ConcurrentHashMap<Long, Set<Long>> failedIndexLedgers = new ConcurrentHashMap<>();
+            for (Map.Entry<Long, Set<Long>> entry: corruptIndexLedgers.entrySet()) {
+                long ledgerId = entry.getKey();
+                Set<Long> entryIds = entry.getValue();
+                Set<Long> failedEntryIds = new TreeSet<>();
+                //todo consecutive enties would be better
+                entryIds.forEach(entryId -> {
+                    try {
+                        Iterator<LedgerEntry> entries =
+                                admin.readEntries(ledgerId, entryId, entryId).iterator();
+                        if (entries.hasNext()) {
+                            LedgerEntry ledgerEntry = entries.next();
+                            ByteBuf data = ledgerEntry.getEntryBuffer();
+                            ByteBuf bb = Unpooled.buffer(8 + 8 + data.capacity());
+                            bb.writeLong(ledgerId);
+                            bb.writeLong(entryId);
+                            bb.writeBytes(data);
+                            long newoffset = entryLogger.addEntry(ledgerId, bb);
+                            offsets.add(new EntryLocation(ledgerId, entryId, newoffset));
+                        } else {
+                            failedEntryIds.add(entryId);
+                        }
+                    } catch (Exception e) {
+                        LOG.error("occured exception when fixing", e);
+                        failedEntryIds.add(entryId);
+                    }
+                });
+                if (failedEntryIds.size() != 0) {
+                    failedIndexLedgers.put(ledgerId, failedEntryIds);
                 }
-            });
+            }
             flush();
-        }
-
-        private void flush() throws IOException {
-            if (offsets.isEmpty()) {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Skipping entry log flushing, as there are no offset!");
-                }
-                return;
-            }
-
-            // Before updating the index, we want to wait until all the re-add entries are flushed into the
-            // entryLog
-            try {
-                entryLogger.flush();
-                ledgerStorage.updateEntriesLocations(offsets);
-            } finally {
-                offsets.clear();
-            }
         }
 
         /**
          * Fix corrupt index item by scan entry log and update their locations.
-         * fixing plan B
+         * fixing plan B for corrupt index item
          */
-        private void fixCorruptIndexItemByScan() {
+        void fixCorruptIndexItemByScan() {
             try {
                 chooseEntryLogs();
             } catch (Exception e) {
@@ -513,6 +525,24 @@ class BookieScanner {
             }
         }
 
+        private void flush() throws IOException {
+            if (offsets.isEmpty()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Skipping entry log flushing, as there are no offset!");
+                }
+                return;
+            }
+
+            // Before updating the index, we want to wait until all the re-add entries are flushed into the
+            // entryLog
+            try {
+                entryLogger.flush();
+                ledgerStorage.updateEntriesLocations(offsets);
+            } finally {
+                offsets.clear();
+            }
+        }
+
         // todo improve logic efficiently
         /**
          * Get appropriate entry logs to scan by compare neighbor entry's entryLogId.
@@ -522,9 +552,6 @@ class BookieScanner {
             for (Map.Entry<Long, Set<Long>> entry: corruptIndexLedgers.entrySet()) {
                 long ledgerId = entry.getKey();
                 Set<Long> entryIds = entry.getValue();
-                final BookKeeper client = new BookKeeper(new ClientConfiguration(conf),
-                        zk);
-                final BookKeeperAdmin admin = new BookKeeperAdmin(client, statsLogger);
                 LedgerHandle lh = null;
                 lh = admin.openLedgerNoRecovery(ledgerId);
                 for (long entryId : entryIds) {

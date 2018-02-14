@@ -58,6 +58,7 @@ import org.slf4j.LoggerFactory;
 public class InterleavedLedgerStorage implements CompactableLedgerStorage, EntryLogListener {
     private static final Logger LOG = LoggerFactory.getLogger(InterleavedLedgerStorage.class);
 
+    private boolean enableScanner;
     BookieScanner scanner;
     EntryLogger entryLogger;
     LedgerCache ledgerCache;
@@ -104,7 +105,10 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
         entryLogger = new EntryLogger(conf, ledgerDirsManager, this);
         ledgerCache = new LedgerCacheImpl(conf, activeLedgers,
                 null == indexDirsManager ? ledgerDirsManager : indexDirsManager, statsLogger);
-        scanner = new BookieScanner(conf, this, ledgerManager, entryLogger, ledgerCache, statsLogger);
+        enableScanner = conf.getBookieScannerEnabled();
+        if (enableScanner) {
+            scanner = new BookieScanner(conf, this, ledgerManager, entryLogger, ledgerCache, statsLogger);
+        }
         gcThread = new GarbageCollectorThread(conf, ledgerManager, this, statsLogger.scope("gc"));
         ledgerDirsManager.addLedgerDirsListener(getLedgerDirsListener());
         // Expose Stats
@@ -290,15 +294,19 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
         try {
             offset = ledgerCache.getEntryOffset(ledgerId, entryId);
             if (offset == 0) {
-                //maybe the entry offset in indexFile is corrupt
-                scanner.addCorruptIndexItem(ledgerId, entryId);
+                if (enableScanner) {
+                    //maybe the entry offset in indexFile is corrupt
+                    scanner.addCorruptIndexItem(ledgerId, entryId);
+                }
                 throw new Bookie.NoEntryException(ledgerId, entryId);
             }
             success = true;
         } catch (IOException ioe) {
             if (ioe.getCause() instanceof NoLedgerException) {
-                //read index file fail
-                scanner.addToSuspiciousLedgers(ledgerId);
+                if (enableScanner) {
+                    //read index file fail
+                    scanner.addToSuspiciousLedgers(ledgerId);
+                }
             }
             throw ioe;
         } finally {
@@ -308,7 +316,7 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
                 getOffsetStats.registerFailedEvent(MathUtils.elapsedNanos(startTimeNanos), TimeUnit.NANOSECONDS);
             }
         }
-        LOG.info("Get offset succeed for ledger: {} entry: {}", ledgerId, entryId);
+        LOG.info("Get offset {} succeed for ledger: {} entry: {}", offset, ledgerId, entryId);
 
         // Get Entry
         startTimeNanos = MathUtils.nowInNano();
@@ -318,9 +326,11 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
             success = true;
             return retBytes;
         } catch (IOException ioe) {
-            //entry log maybe corrupt
-            scanner.addToSuspiciousEntryLogs(EntryLogger.logIdForOffset(offset));
-            scanner.addToSuspiciousLedgers(ledgerId);
+            if (enableScanner) {
+                //entry log maybe corrupt
+                scanner.addToSuspiciousEntryLogs(EntryLogger.logIdForOffset(offset));
+                scanner.addToSuspiciousLedgers(ledgerId);
+            }
             throw ioe;
         } finally {
             if (success) {

@@ -69,6 +69,9 @@ groups:
   - param: bookieAuthProviderFactoryClass
     description: The bookie authentication provider factory class name. If this is null, no authentication will take place.
     default: null
+  - param: enableBookieScanner
+    description: Whether enable BookieScanner which is used to check ledger's integrity.
+    default: 'false'
 
 - name: Garbage collection settings
   params:
