@@ -32,17 +32,17 @@ class FileInfoBackingCache {
     static final int DEAD_REF = -0xdead;
 
     final ConcurrentLongHashMap<CachedFileInfo> fileInfos = new ConcurrentLongHashMap<>();
-    final FileLoader fileLoader;
+    final FileSelector fileSelector;
 
-    FileInfoBackingCache(FileLoader fileLoader) {
-        this.fileLoader = fileLoader;
+    FileInfoBackingCache(FileSelector fileSelector) {
+        this.fileSelector = fileSelector;
     }
 
     CachedFileInfo loadFileInfo(long ledgerId, byte[] masterKey) throws IOException {
         while (true) {
             CachedFileInfo fi = fileInfos.get(ledgerId);
             if (fi == null) {
-                File backingFile = fileLoader.load(ledgerId, masterKey != null);
+                File backingFile = fileSelector.select(ledgerId, masterKey != null);
                 CachedFileInfo newFi = new CachedFileInfo(ledgerId, backingFile, masterKey);
                 CachedFileInfo oldFi = fileInfos.putIfAbsent(ledgerId, newFi);
                 if (oldFi != null) {
@@ -157,7 +157,7 @@ class FileInfoBackingCache {
         }
     }
 
-    interface FileLoader {
-        File load(long ledgerId, boolean createIfMissing) throws IOException;
+    interface FileSelector {
+        File select(long ledgerId, boolean createIfMissing) throws IOException;
     }
 }
