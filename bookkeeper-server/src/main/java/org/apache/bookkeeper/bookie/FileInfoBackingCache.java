@@ -24,7 +24,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 
@@ -32,7 +31,6 @@ import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 class FileInfoBackingCache {
     static final int DEAD_REF = -0xdead;
 
-    final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     final ConcurrentLongHashMap<CachedFileInfo> fileInfos = new ConcurrentLongHashMap<>();
     final FileLoader fileLoader;
 
@@ -40,59 +38,33 @@ class FileInfoBackingCache {
         this.fileLoader = fileLoader;
     }
 
-    /**
-     * This method should be under `lock` of FileInfoBackingCache.
-     */
-    private static CachedFileInfo tryRetainFileInfo(CachedFileInfo fi) throws IOException {
-        boolean retained = fi.tryRetain();
-        if (!retained) {
-            throw new IOException("FileInfo " + fi + " is already marked dead");
-        }
-        return fi;
-    }
-
     CachedFileInfo loadFileInfo(long ledgerId, byte[] masterKey) throws IOException {
-        lock.readLock().lock();
-        try {
+        while (true) {
             CachedFileInfo fi = fileInfos.get(ledgerId);
-            if (fi != null) {
-                // tryRetain only fails if #markDead() has been called
-                // on fi. This is only called from within the write lock,
-                // and if it is called (and succeeds) the fi will have been
-                // removed from fileInfos at the same time, so we should not
-                // have been able to get a reference to it here.
-                // The caller of loadFileInfo owns the refence, and is
-                // responsible for calling the corresponding #release().
-                return tryRetainFileInfo(fi);
+            if (fi == null) {
+                File backingFile = fileLoader.load(ledgerId, masterKey != null);
+                CachedFileInfo newFi = new CachedFileInfo(ledgerId, backingFile, masterKey);
+                CachedFileInfo oldFi = fileInfos.putIfAbsent(ledgerId, newFi);
+                if (oldFi != null) {
+                    // someone is already putting a fileinfo here, so use the existing one and cleanup the new one
+                    newFi.recycle();
+                    fi = oldFi;
+                } else {
+                    fi = newFi;
+                }
             }
-        } finally {
-            lock.readLock().unlock();
-        }
 
-        File backingFile = fileLoader.load(ledgerId, masterKey != null);
-        CachedFileInfo newFi = new CachedFileInfo(ledgerId, backingFile, masterKey);
-
-        // else FileInfo not found, create it under write lock
-        lock.writeLock().lock();
-        try {
-            CachedFileInfo fi = fileInfos.get(ledgerId);
-            if (fi != null) {
-                // someone is already putting a fileinfo here, so use the existing one and recycle the new one
-                newFi.recycle();
+            if (fi.tryRetain()) {
+                return fi;
             } else {
-                fileInfos.put(ledgerId, newFi);
-                fi = newFi;
+                // defensively remove from fileInfo, to avoid infinite loop
+                fi.close(true);
+                fileInfos.remove(ledgerId, fi);
             }
-
-            // see comment above for why we assert
-            return tryRetainFileInfo(fi);
-        } finally {
-            lock.writeLock().unlock();
         }
     }
 
     private void releaseFileInfo(long ledgerId, CachedFileInfo fileInfo) {
-        lock.writeLock().lock();
         try {
             if (fileInfo.markDead()) {
                 fileInfo.close(true);
@@ -101,8 +73,6 @@ class FileInfoBackingCache {
         } catch (IOException ioe) {
             log.error("Error evicting file info({}) for ledger {} from backing cache",
                       fileInfo, ledgerId, ioe);
-        } finally {
-            lock.writeLock().unlock();
         }
     }
 
