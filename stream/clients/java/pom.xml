@@ -30,6 +30,7 @@
   <modules>
     <module>base</module>
     <module>kv</module>
+    <module>stream</module>
     <module>all</module>
   </modules>
 </project>

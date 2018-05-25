@@ -17,15 +17,49 @@
  * under the License.
  */
 
-package org.apache.bookkeeper.api.stream;
+package org.apache.bookkeeper.api;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * Api Code.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+@RequiredArgsConstructor
+@Getter
+public enum Code {
+
+    OK(0),
+
+    // 4xx: client error3
+    BAD_REQUEST(400),
+    ILLEGAL_OP(403),
+    INVALID_ARGUMENT(412),
+
+    // 5xx: server errors
+    INTERNAL_ERROR(500),
+    NOT_IMPLEMENTED(501),
+
+    // 6xx: unexpected
+    UNEXPECTED(600),
+
+    // 9xx: revisions, versions
+    BAD_VERSION(900),
+    BAD_REVISION(901),
+    SMALLER_REVISION(902),
+
+    // 21xx: Stream API
+    END_OF_STREAM(2106),
+
+    // 6xxx: KV API
+    INVALID_KEY(6000),
+    KEY_EXISTS(6001),
+    KEY_NOT_FOUND(6002);
+
+    private final int code;
+
 }

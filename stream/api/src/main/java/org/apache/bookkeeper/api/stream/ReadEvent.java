@@ -1,4 +1,4 @@
-/*
+ /*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,9 +23,20 @@ import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * An event read from a stream.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface ReadEvent<KeyT, ValueT> extends Event<KeyT, ValueT> {
+
+    /**
+     * @return stream name.
+     */
+    String stream();
+
+    /**
+     * @return position in the stream.
+     */
+    Position position();
+
 }
