@@ -19,13 +19,39 @@
 
 package org.apache.bookkeeper.api.stream;
 
+import javax.annotation.Nullable;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * Represents an event appended into a stream.
+ *
+ * <p>Close the object to release resources held by this class.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface Event<KeyT, ValueT> extends AutoCloseable {
+
+    /**
+     * @return event key.
+     */
+    @Nullable
+    KeyT key();
+
+    /**
+     * @return event value.
+     */
+    ValueT value();
+
+    /**
+     * @return event timestamp.
+     */
+    long timestamp();
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    void close();
+
 }

@@ -23,9 +23,9 @@ import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * Flush result of {@link Writer#flush()}.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface FlushResult {
 }

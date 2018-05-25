@@ -23,9 +23,15 @@ import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * Represents the write result of {@link Writer#write(WriteEvent)}.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface WriteResult {
+
+    /**
+     * @return the position that the event appended to the stream.
+     */
+    Position position();
+
 }

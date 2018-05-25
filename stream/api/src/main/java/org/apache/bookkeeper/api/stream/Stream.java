@@ -19,13 +19,39 @@
 
 package org.apache.bookkeeper.api.stream;
 
+import java.io.Closeable;
+import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
+import org.apache.bookkeeper.common.util.AsyncCloseable;
 
 /**
- * Event position in the stream.
+ * Client to interact with streams.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface Stream<KeyT, ValueT> extends AsyncCloseable, Closeable {
+
+    /**
+     * Open a reader to read events from stream starting from <tt>position</tt>.
+     *
+     * @param config reader config
+     * @param position position
+     * @return reader instance
+     */
+    CompletableFuture<Reader<KeyT, ValueT>> openReader(ReaderConfig config, Position position);
+
+    /**
+     * Open a writer to append events to stream.
+     *
+     * @param config writer config
+     * @return writer instance
+     */
+    CompletableFuture<Writer<KeyT, ValueT>> openWriter(WriterConfig config);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    void close();
 }

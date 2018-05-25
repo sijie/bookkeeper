@@ -23,9 +23,9 @@ import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * An event used for appending to a stream.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface WriteEvent<KeyT, ValueT> extends Event<KeyT, ValueT> {
 }

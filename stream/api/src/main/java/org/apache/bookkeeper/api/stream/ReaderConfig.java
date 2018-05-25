@@ -19,13 +19,17 @@
 
 package org.apache.bookkeeper.api.stream;
 
+import lombok.Builder;
+import lombok.experimental.Accessors;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * Reader config.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+@Builder
+@Accessors(fluent = true)
+public class ReaderConfig {
 }
