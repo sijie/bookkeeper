@@ -19,13 +19,35 @@
 
 package org.apache.bookkeeper.api.stream;
 
+import lombok.Builder;
+import lombok.experimental.Accessors;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
+import org.apache.bookkeeper.common.coder.Coder;
+import org.apache.bookkeeper.common.router.HashRouter;
 
 /**
- * Event position in the stream.
+ * A stream config.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+@Builder
+@Accessors(fluent = true)
+public class StreamConfig<KeyT, ValueT> {
+
+    /**
+     * @return key coder.
+     */
+    Coder<KeyT> keyCoder;
+
+    /**
+     * @return value coder.
+     */
+    Coder<ValueT> valueCoder;
+
+    /**
+     * @return key router.
+     */
+    HashRouter<KeyT> keyRouter;
+
 }

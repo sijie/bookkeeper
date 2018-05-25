@@ -67,6 +67,10 @@ public final class ProtocolConstants {
     public static final long INVALID_STREAM_ID = -1L;
     // invalid metadata range id
     public static final long INVALID_RANGE_ID = -1L;
+    // invalid writer id
+    public static final long INVALID_WRITER_ID = -1L;
+    // invalid event sequence
+    public static final long INVALID_EVENT_SEQUENCE = -1L;
 
     // the minimum data range id - ids between [1L - 1024L) are reserved now.
     public static final long MIN_DATA_RANGE_ID = 1024L;

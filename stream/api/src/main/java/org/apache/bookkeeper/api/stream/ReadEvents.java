@@ -23,9 +23,23 @@ import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * A batch of events read from a stream.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface ReadEvents<KeyT, ValueT> extends AutoCloseable {
+
+    /**
+     * Return the next event in this batch of events.
+     * Return <tt>null</tt> if reach end of the batch.
+     *
+     * @return the next event in this batch of events, and return null
+     *         if reach end of the batch.
+     */
+    ReadEvent<KeyT, ValueT> next();
+
+    /**
+     * {@inheritDoc}
+     */
+    void close();
 }

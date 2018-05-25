@@ -16,16 +16,32 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package org.apache.bookkeeper.api.stream.exceptions;
 
-package org.apache.bookkeeper.api.stream;
-
-import org.apache.bookkeeper.common.annotation.InterfaceAudience;
-import org.apache.bookkeeper.common.annotation.InterfaceStability;
+import lombok.Getter;
+import org.apache.bookkeeper.api.exceptions.ApiException;
+import org.apache.bookkeeper.api.kv.result.Code;
 
 /**
- * Event position in the stream.
+ * Stream Api Exception.
  */
-@InterfaceAudience.Public
-@InterfaceStability.Evolving
-public interface Position {
+public class StreamApiException extends ApiException {
+
+    @Getter
+    private final Code code;
+
+    public StreamApiException(Code code, String message) {
+        super(message);
+        this.code = code;
+    }
+
+    public StreamApiException(Code code, String message, Throwable cause) {
+        super(message, cause);
+        this.code = code;
+    }
+
+    public StreamApiException(Code code, Throwable cause) {
+        super(cause);
+        this.code = code;
+    }
 }

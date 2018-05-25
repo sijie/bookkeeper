@@ -17,15 +17,36 @@
  * under the License.
  */
 
-package org.apache.bookkeeper.api.stream;
+package org.apache.bookkeeper.api.transaction;
 
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * Represent status of a transactional operation.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public enum TxnStatus {
+
+    NONE(0),
+    OPEN(1),
+    SEALING(2),
+    SEALED(3),
+    COMMITTING(4),
+    COMMITTED(5),
+    ABORTING(6),
+    ABORTED(7);
+
+    int code;
+
+    TxnStatus(int code) {
+        this.code = code;
+    }
+
+    int code() {
+        return code;
+    }
+
+
 }

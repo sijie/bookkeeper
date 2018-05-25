@@ -17,15 +17,15 @@
  * under the License.
  */
 
-package org.apache.bookkeeper.api.stream;
+package org.apache.bookkeeper.api.transaction;
 
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
 /**
- * Event position in the stream.
+ * Id of a transactional operation, eg. write batch.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface TxnID {
 }

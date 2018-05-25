@@ -22,19 +22,44 @@ import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.api.kv.PTable;
 import org.apache.bookkeeper.api.kv.Table;
-import org.apache.bookkeeper.common.annotation.InterfaceAudience.Public;
-import org.apache.bookkeeper.common.annotation.InterfaceStability.Evolving;
+import org.apache.bookkeeper.api.stream.Stream;
+import org.apache.bookkeeper.api.stream.StreamConfig;
+import org.apache.bookkeeper.common.annotation.InterfaceAudience;
+import org.apache.bookkeeper.common.annotation.InterfaceStability;
 import org.apache.bookkeeper.common.util.AutoAsyncCloseable;
 
 /**
  * The stream storage client.
  */
-@Public
-@Evolving
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public interface StorageClient extends AutoAsyncCloseable {
 
+    /**
+     * Open a {@link PTable} to update provided <tt>table</tt>.
+     *
+     * @param table table name
+     * @return a future represents the open result.
+     */
     CompletableFuture<PTable<ByteBuf, ByteBuf>> openPTable(String table);
 
+    /**
+     * Open a {@link Table} to update the provided <tt>table</tt>.
+     *
+     * @param table table name
+     * @return a future represents the open result.
+     */
     CompletableFuture<Table<ByteBuf, ByteBuf>> openTable(String table);
+
+    /**
+     * Open a {@link Stream} to interact with provided <tt>stream</tt>.
+     *
+     * @param stream stream name.
+     * @param config stream config.
+     * @return a future to return the stream handle.
+     */
+    <KeyT, ValueT>
+    CompletableFuture<Stream<KeyT, ValueT>> openStream(String stream,
+                                                       StreamConfig<KeyT, ValueT> config);
 
 }

@@ -17,15 +17,7 @@
  * under the License.
  */
 
-package org.apache.bookkeeper.api.stream;
-
-import org.apache.bookkeeper.common.annotation.InterfaceAudience;
-import org.apache.bookkeeper.common.annotation.InterfaceStability;
-
 /**
- * Event position in the stream.
+ * Classes related to transactional operations. E.g atomic batch writes.
  */
-@InterfaceAudience.Public
-@InterfaceStability.Evolving
-public interface Position {
-}
+package org.apache.bookkeeper.api.transaction;

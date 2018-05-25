@@ -25,6 +25,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.api.StorageClient;
 import org.apache.bookkeeper.api.kv.PTable;
 import org.apache.bookkeeper.api.kv.Table;
+import org.apache.bookkeeper.api.stream.Stream;
+import org.apache.bookkeeper.api.stream.StreamConfig;
 import org.apache.bookkeeper.clients.config.StorageClientSettings;
 import org.apache.bookkeeper.clients.impl.internal.StorageServerClientManagerImpl;
 import org.apache.bookkeeper.clients.impl.internal.api.StorageServerClientManager;
@@ -70,7 +72,18 @@ class StorageClientImpl extends AbstractAutoAsyncCloseable implements StorageCli
     }
 
     //
-    // Materialized Views
+    // Streams
+    //
+
+    @Override
+    public <KeyT, ValueT> CompletableFuture<Stream<KeyT, ValueT>>
+            openStream(String stream, StreamConfig<KeyT, ValueT> config) {
+        return FutureUtils.exception(new UnsupportedOperationException("Not implemented yet"));
+    }
+
+
+    //
+    // Tables
     //
 
     @Override
