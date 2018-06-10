@@ -23,6 +23,7 @@ import lombok.experimental.Accessors;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stream.proto.common.Endpoint;
 import org.apache.bookkeeper.stream.server.conf.StorageServerConfiguration;
+import org.apache.bookkeeper.stream.storage.StorageResources;
 import org.apache.bookkeeper.stream.storage.api.StorageContainerStore;
 
 /**
@@ -68,6 +69,11 @@ public class GrpcServerSpec {
      * @return local server name.
      */
     String localServerName;
+
+    /**
+     * Get the storage resources.
+     */
+    StorageResources storageResources;
 
     /**
      * Get the local handler registry.
