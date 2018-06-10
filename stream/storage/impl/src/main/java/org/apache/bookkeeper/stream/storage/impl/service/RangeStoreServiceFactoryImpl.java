@@ -18,7 +18,7 @@
 
 package org.apache.bookkeeper.stream.storage.impl.service;
 
-import java.net.URI;
+import java.util.function.Supplier;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.common.util.SharedResourceManager;
 import org.apache.bookkeeper.common.util.SharedResourceManager.Resource;
@@ -27,6 +27,7 @@ import org.apache.bookkeeper.stream.storage.api.metadata.RangeStoreService;
 import org.apache.bookkeeper.stream.storage.api.service.RangeStoreServiceFactory;
 import org.apache.bookkeeper.stream.storage.conf.StorageConfiguration;
 import org.apache.bookkeeper.stream.storage.impl.store.MVCCStoreFactory;
+import org.apache.distributedlog.api.namespace.Namespace;
 
 /**
  * Default implementation of {@link RangeStoreServiceFactory}.
@@ -38,19 +39,19 @@ public class RangeStoreServiceFactoryImpl implements RangeStoreServiceFactory {
     private final Resource<OrderedScheduler> schedulerResource;
     private final OrderedScheduler scheduler;
     private final MVCCStoreFactory storeFactory;
-    private final URI defaultBackendUri;
+    private final Supplier<Namespace> dlogNamespaceFactory;
 
     public RangeStoreServiceFactoryImpl(StorageConfiguration storageConf,
                                         StorageContainerPlacementPolicy rangePlacementPolicy,
                                         Resource<OrderedScheduler> schedulerResource,
                                         MVCCStoreFactory storeFactory,
-                                        URI defaultBackendUri) {
+                                        Supplier<Namespace> dlogNamespaceFactory) {
         this.storageConf = storageConf;
         this.rangePlacementPolicy = rangePlacementPolicy;
         this.schedulerResource = schedulerResource;
         this.scheduler = SharedResourceManager.shared().get(schedulerResource);
         this.storeFactory = storeFactory;
-        this.defaultBackendUri = defaultBackendUri;
+        this.dlogNamespaceFactory = dlogNamespaceFactory;
     }
 
     @Override
@@ -61,7 +62,7 @@ public class RangeStoreServiceFactoryImpl implements RangeStoreServiceFactory {
             rangePlacementPolicy,
             scheduler,
             storeFactory,
-            defaultBackendUri);
+            dlogNamespaceFactory);
     }
 
     @Override

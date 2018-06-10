@@ -50,6 +50,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.clients.impl.container.StorageContainerClientInterceptor;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.common.grpc.proxy.ProxyHandlerRegistry;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.statelib.api.mvcc.MVCCAsyncStore;
 import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.bookkeeper.stream.proto.NamespaceConfiguration;
@@ -85,6 +86,7 @@ import org.apache.bookkeeper.stream.proto.storage.MetaRangeServiceGrpc.MetaRange
 import org.apache.bookkeeper.stream.proto.storage.RootRangeServiceGrpc;
 import org.apache.bookkeeper.stream.proto.storage.RootRangeServiceGrpc.RootRangeServiceFutureStub;
 import org.apache.bookkeeper.stream.proto.storage.StatusCode;
+import org.apache.bookkeeper.stream.storage.StorageResources;
 import org.apache.bookkeeper.stream.storage.api.metadata.RangeStoreService;
 import org.apache.bookkeeper.stream.storage.api.service.RangeStoreServiceFactory;
 import org.apache.bookkeeper.stream.storage.conf.StorageConfiguration;
@@ -133,6 +135,7 @@ public class TestStorageContainerStoreImpl {
         NamespaceConfiguration.newBuilder()
             .setDefaultStreamConf(DEFAULT_STREAM_CONF)
             .build();
+    private OrderedScheduler scheduler;
     private RangeStoreService mockRangeStoreService;
     private StorageContainerStoreImpl rangeStore;
     private Server server;
@@ -210,6 +213,11 @@ public class TestStorageContainerStoreImpl {
     public void setUp() throws Exception {
         Endpoint endpoint = createEndpoint("127.0.0.1", 0);
 
+        scheduler = OrderedScheduler.newSchedulerBuilder()
+            .name("test-scheduler")
+            .numThreads(1)
+            .build();
+
         // create the client manager
         MVCCStoreFactory storeFactory = mock(MVCCStoreFactory.class);
         MVCCAsyncStore<byte[], byte[]> store = mock(MVCCAsyncStore.class);
@@ -229,14 +237,14 @@ public class TestStorageContainerStoreImpl {
             storageConf,
             (storeConf, rgRegistry)
                 -> new LocalStorageContainerManager(endpoint, storeConf, rgRegistry, 2),
-            new RangeStoreContainerServiceFactoryImpl(rangeStoreServiceFactory),
+            new RangeStoreContainerServiceFactoryImpl(rangeStoreServiceFactory, StorageResources.create().scheduler()),
             NullStatsLogger.INSTANCE);
 
         rangeStore.start();
 
         final String serverName = "test-server";
 
-        Collection<ServerServiceDefinition> grpcServices = GrpcServices.create(null);
+        Collection<ServerServiceDefinition> grpcServices = GrpcServices.create(null, scheduler);
         ProxyHandlerRegistry.Builder registryBuilder = ProxyHandlerRegistry.newBuilder();
         grpcServices.forEach(service -> registryBuilder.addService(service));
         ProxyHandlerRegistry registry = registryBuilder
@@ -277,6 +285,9 @@ public class TestStorageContainerStoreImpl {
         }
         if (null != rangeStore) {
             rangeStore.close();
+        }
+        if (null != scheduler) {
+            scheduler.shutdown();
         }
     }
 

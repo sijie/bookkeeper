@@ -18,6 +18,9 @@
 
 package org.apache.bookkeeper.stream.storage.impl.service;
 
+import org.apache.bookkeeper.common.util.OrderedScheduler;
+import org.apache.bookkeeper.common.util.SharedResourceManager;
+import org.apache.bookkeeper.common.util.SharedResourceManager.Resource;
 import org.apache.bookkeeper.stream.storage.api.sc.StorageContainer;
 import org.apache.bookkeeper.stream.storage.api.sc.StorageContainerService;
 import org.apache.bookkeeper.stream.storage.api.sc.StorageContainerServiceFactory;
@@ -29,18 +32,24 @@ import org.apache.bookkeeper.stream.storage.api.service.RangeStoreServiceFactory
 public class RangeStoreContainerServiceFactoryImpl implements StorageContainerServiceFactory {
 
     private final RangeStoreServiceFactory serviceFactory;
+    private final Resource<OrderedScheduler> schedulerResource;
+    private final OrderedScheduler scheduler;
 
-    public RangeStoreContainerServiceFactoryImpl(RangeStoreServiceFactory serviceFactory) {
+    public RangeStoreContainerServiceFactoryImpl(RangeStoreServiceFactory serviceFactory,
+                                                 Resource<OrderedScheduler> schedulerResource) {
+        this.schedulerResource = schedulerResource;
+        this.scheduler = SharedResourceManager.shared().get(schedulerResource);
         this.serviceFactory = serviceFactory;
     }
 
     @Override
     public StorageContainerService createStorageContainerService(long scId) {
-        return new RangeStoreContainerServiceImpl(serviceFactory.createService(scId));
+        return new RangeStoreContainerServiceImpl(serviceFactory.createService(scId), scheduler);
     }
 
     @Override
     public void close() {
         serviceFactory.close();
+        SharedResourceManager.shared().release(schedulerResource, scheduler);
     }
 }
