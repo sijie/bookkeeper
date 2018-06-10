@@ -16,7 +16,7 @@ package org.apache.bookkeeper.stream.storage;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import java.net.URI;
+import java.util.function.Supplier;
 import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stream.protocol.util.StorageContainerPlacementPolicy;
@@ -28,6 +28,7 @@ import org.apache.bookkeeper.stream.storage.impl.sc.StorageContainerPlacementPol
 import org.apache.bookkeeper.stream.storage.impl.service.RangeStoreContainerServiceFactoryImpl;
 import org.apache.bookkeeper.stream.storage.impl.service.RangeStoreServiceFactoryImpl;
 import org.apache.bookkeeper.stream.storage.impl.store.MVCCStoreFactory;
+import org.apache.distributedlog.api.namespace.Namespace;
 
 /**
  * Builder to build the storage component.
@@ -45,10 +46,9 @@ public final class StorageContainerStoreBuilder {
     private StorageContainerPlacementPolicy.Factory placementPolicyFactory = () ->
         StorageContainerPlacementPolicyImpl.of(1024);
     private MVCCStoreFactory mvccStoreFactory = null;
-    private URI defaultBackendUri = null;
+    private Supplier<Namespace> dlogNamespaceProvider = null;
 
-    private StorageContainerStoreBuilder() {
-    }
+    private StorageContainerStoreBuilder() {}
 
     /**
      * Build the range store with the provided <tt>placementPolicyFactory</tt>.
@@ -121,13 +121,13 @@ public final class StorageContainerStoreBuilder {
     }
 
     /**
-     * Backend uri for storing table ranges.
+     * Build the range store with provided {@link Namespace}.
      *
-     * @param uri uri for storing table ranges.
-     * @return range store builder.
+     * @param namespaceSupplier dlog namespace supplier
+     * @return range store builder
      */
-    public StorageContainerStoreBuilder withDefaultBackendUri(URI uri) {
-        this.defaultBackendUri = uri;
+    public StorageContainerStoreBuilder withDlogNamespaceProvider(Supplier<Namespace> namespaceSupplier) {
+        this.dlogNamespaceProvider = namespaceSupplier;
         return this;
     }
 
@@ -135,7 +135,7 @@ public final class StorageContainerStoreBuilder {
         checkNotNull(scmFactory, "StorageContainerManagerFactory is not provided");
         checkNotNull(storeConf, "StorageConfiguration is not provided");
         checkNotNull(mvccStoreFactory, "MVCCStoreFactory is not provided");
-        checkNotNull(defaultBackendUri, "Default backend uri is not provided");
+        checkNotNull(dlogNamespaceProvider, "Dlog namespace provider is not provided");
         checkNotNull(placementPolicyFactory, "Storage Container Placement Policy Factory is not provided");
 
         RangeStoreServiceFactoryImpl serviceFactory = new RangeStoreServiceFactoryImpl(
@@ -143,10 +143,10 @@ public final class StorageContainerStoreBuilder {
             placementPolicyFactory.newPlacementPolicy(),
             storeResources.scheduler(),
             mvccStoreFactory,
-            defaultBackendUri);
+            dlogNamespaceProvider);
 
         RangeStoreContainerServiceFactoryImpl containerServiceFactory =
-            new RangeStoreContainerServiceFactoryImpl(serviceFactory);
+            new RangeStoreContainerServiceFactoryImpl(serviceFactory, storeResources.scheduler());
 
         return new StorageContainerStoreImpl(
             storeConf,

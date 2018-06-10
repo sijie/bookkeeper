@@ -47,7 +47,11 @@ import org.apache.bookkeeper.stream.proto.storage.GetNamespaceRequest;
 import org.apache.bookkeeper.stream.proto.storage.GetNamespaceResponse;
 import org.apache.bookkeeper.stream.proto.storage.GetStreamRequest;
 import org.apache.bookkeeper.stream.proto.storage.GetStreamResponse;
+import org.apache.bookkeeper.stream.proto.storage.SetupReaderRequest;
+import org.apache.bookkeeper.stream.proto.storage.SetupWriterRequest;
 import org.apache.bookkeeper.stream.storage.api.metadata.RangeStoreService;
+import org.apache.bookkeeper.stream.storage.api.stream.StreamRangeReader;
+import org.apache.bookkeeper.stream.storage.api.stream.StreamRangeWriter;
 
 /**
  * It is a single-ton implementation that fails all requests.
@@ -155,6 +159,20 @@ final class FailRequestRangeStoreService implements RangeStoreService {
 
     @Override
     public CompletableFuture<IncrementResponse> incr(IncrementRequest request) {
+        return failWrongGroupRequest();
+    }
+
+    //
+    // Stream API
+    //
+
+    @Override
+    public CompletableFuture<StreamRangeWriter> openStreamRangeWriter(SetupWriterRequest request) {
+        return failWrongGroupRequest();
+    }
+
+    @Override
+    public CompletableFuture<StreamRangeReader> openStreamRangeReader(SetupReaderRequest request) {
         return failWrongGroupRequest();
     }
 }

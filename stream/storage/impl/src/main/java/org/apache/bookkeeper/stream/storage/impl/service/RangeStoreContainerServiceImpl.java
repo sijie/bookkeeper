@@ -21,6 +21,7 @@ package org.apache.bookkeeper.stream.storage.impl.service;
 import io.grpc.ServerServiceDefinition;
 import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stream.storage.api.metadata.RangeStoreService;
 import org.apache.bookkeeper.stream.storage.api.sc.StorageContainerService;
 import org.apache.bookkeeper.stream.storage.impl.grpc.GrpcServices;
@@ -33,9 +34,10 @@ class RangeStoreContainerServiceImpl implements StorageContainerService {
     private final RangeStoreService store;
     private final Collection<ServerServiceDefinition> grpcServices;
 
-    RangeStoreContainerServiceImpl(RangeStoreService service) {
+    RangeStoreContainerServiceImpl(RangeStoreService service,
+                                   OrderedScheduler scheduler) {
         this.store = service;
-        this.grpcServices = GrpcServices.create(service);
+        this.grpcServices = GrpcServices.create(service, scheduler);
     }
 
     @Override
