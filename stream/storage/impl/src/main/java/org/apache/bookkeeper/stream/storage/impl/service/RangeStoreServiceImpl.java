@@ -25,9 +25,9 @@ import static org.apache.bookkeeper.stream.protocol.ProtocolConstants.ROOT_STORA
 import static org.apache.bookkeeper.stream.protocol.ProtocolConstants.ROOT_STREAM_ID;
 
 import com.google.common.collect.Lists;
-import java.net.URI;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -58,12 +58,17 @@ import org.apache.bookkeeper.stream.proto.storage.GetNamespaceRequest;
 import org.apache.bookkeeper.stream.proto.storage.GetNamespaceResponse;
 import org.apache.bookkeeper.stream.proto.storage.GetStreamRequest;
 import org.apache.bookkeeper.stream.proto.storage.GetStreamResponse;
+import org.apache.bookkeeper.stream.proto.storage.SetupReaderRequest;
+import org.apache.bookkeeper.stream.proto.storage.SetupWriterRequest;
 import org.apache.bookkeeper.stream.protocol.RangeId;
 import org.apache.bookkeeper.stream.protocol.util.StorageContainerPlacementPolicy;
 import org.apache.bookkeeper.stream.storage.api.kv.TableStore;
 import org.apache.bookkeeper.stream.storage.api.metadata.MetaRangeStore;
 import org.apache.bookkeeper.stream.storage.api.metadata.RangeStoreService;
 import org.apache.bookkeeper.stream.storage.api.metadata.RootRangeStore;
+import org.apache.bookkeeper.stream.storage.api.stream.StreamRangeReader;
+import org.apache.bookkeeper.stream.storage.api.stream.StreamRangeWriter;
+import org.apache.bookkeeper.stream.storage.api.stream.StreamStore;
 import org.apache.bookkeeper.stream.storage.conf.StorageConfiguration;
 import org.apache.bookkeeper.stream.storage.impl.kv.TableStoreCache;
 import org.apache.bookkeeper.stream.storage.impl.kv.TableStoreFactory;
@@ -73,6 +78,8 @@ import org.apache.bookkeeper.stream.storage.impl.metadata.MetaRangeStoreImpl;
 import org.apache.bookkeeper.stream.storage.impl.metadata.RootRangeStoreFactory;
 import org.apache.bookkeeper.stream.storage.impl.metadata.RootRangeStoreImpl;
 import org.apache.bookkeeper.stream.storage.impl.store.MVCCStoreFactory;
+import org.apache.bookkeeper.stream.storage.impl.stream.StreamStoreImpl;
+import org.apache.distributedlog.api.namespace.Namespace;
 
 /**
  * The service implementation running in a storage container.
@@ -99,19 +106,21 @@ class RangeStoreServiceImpl implements RangeStoreService, AutoCloseable {
     private final TableStoreCache tableStoreCache;
     @Getter(value = AccessLevel.PACKAGE)
     private final TableStoreFactory tableStoreFactory;
+    // stream range stores
+    private final StreamStore streamStore;
 
     RangeStoreServiceImpl(StorageConfiguration storageConf,
                           long scId,
                           StorageContainerPlacementPolicy rangePlacementPolicy,
                           OrderedScheduler scheduler,
                           MVCCStoreFactory storeFactory,
-                          URI defaultBackendUri) {
+                          Supplier<Namespace> dlogNamespaceFactory) {
         this(
             scId,
             scheduler,
             storeFactory,
-            store -> new RootRangeStoreImpl(
-                defaultBackendUri, store, rangePlacementPolicy, scheduler.chooseThread(scId)),
+            dlogNamespaceFactory,
+            store -> new RootRangeStoreImpl(store, rangePlacementPolicy, scheduler.chooseThread(scId)),
             store -> new MetaRangeStoreImpl(store, rangePlacementPolicy, scheduler.chooseThread(scId)),
             store -> new TableStoreImpl(store));
     }
@@ -119,6 +128,7 @@ class RangeStoreServiceImpl implements RangeStoreService, AutoCloseable {
     RangeStoreServiceImpl(long scId,
                           OrderedScheduler scheduler,
                           MVCCStoreFactory storeFactory,
+                          Supplier<Namespace> dlogNamespaceFactory,
                           RootRangeStoreFactory rrStoreFactory,
                           MetaRangeStoreFactory mrStoreFactory,
                           TableStoreFactory tableStoreFactory) {
@@ -132,6 +142,7 @@ class RangeStoreServiceImpl implements RangeStoreService, AutoCloseable {
         this.mrStoreFactory = mrStoreFactory;
         this.tableStoreFactory = tableStoreFactory;
         this.tableStoreCache = new TableStoreCache(storeFactory, tableStoreFactory);
+        this.streamStore = new StreamStoreImpl(dlogNamespaceFactory.get());
     }
 
     //
@@ -310,4 +321,18 @@ class RangeStoreServiceImpl implements RangeStoreService, AutoCloseable {
         }
     }
 
+    //
+    // Stream API
+    //
+
+
+    @Override
+    public CompletableFuture<StreamRangeWriter> openStreamRangeWriter(SetupWriterRequest request) {
+        return streamStore.openStreamRangeWriter(request);
+    }
+
+    @Override
+    public CompletableFuture<StreamRangeReader> openStreamRangeReader(SetupReaderRequest request) {
+        return streamStore.openStreamRangeReader(request);
+    }
 }

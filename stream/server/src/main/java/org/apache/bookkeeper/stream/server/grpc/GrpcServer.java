@@ -24,10 +24,14 @@ import java.io.IOException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.component.AbstractLifecycleComponent;
 import org.apache.bookkeeper.common.grpc.proxy.ProxyHandlerRegistry;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
+import org.apache.bookkeeper.common.util.SharedResourceManager;
+import org.apache.bookkeeper.common.util.SharedResourceManager.Resource;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stream.proto.common.Endpoint;
 import org.apache.bookkeeper.stream.server.conf.StorageServerConfiguration;
 import org.apache.bookkeeper.stream.server.exceptions.StorageServerRuntimeException;
+import org.apache.bookkeeper.stream.storage.StorageResources;
 import org.apache.bookkeeper.stream.storage.api.StorageContainerStore;
 import org.apache.bookkeeper.stream.storage.impl.grpc.GrpcServices;
 
@@ -41,6 +45,7 @@ public class GrpcServer extends AbstractLifecycleComponent<StorageServerConfigur
         return new GrpcServer(
             spec.storeSupplier().get(),
             spec.storeServerConf(),
+            spec.storageResources(),
             spec.endpoint(),
             spec.localServerName(),
             spec.localHandlerRegistry(),
@@ -49,23 +54,21 @@ public class GrpcServer extends AbstractLifecycleComponent<StorageServerConfigur
 
     private final Endpoint myEndpoint;
     private final Server grpcServer;
-
-    public GrpcServer(StorageContainerStore storageContainerStore,
-                      StorageServerConfiguration conf,
-                      Endpoint myEndpoint,
-                      StatsLogger statsLogger) {
-        this(storageContainerStore, conf, myEndpoint, null, null, statsLogger);
-    }
+    private final Resource<OrderedScheduler> schedulerResource;
+    private final OrderedScheduler scheduler;
 
     @VisibleForTesting
     public GrpcServer(StorageContainerStore storageContainerStore,
                       StorageServerConfiguration conf,
+                      StorageResources resources,
                       Endpoint myEndpoint,
                       String localServerName,
                       HandlerRegistry localHandlerRegistry,
                       StatsLogger statsLogger) {
         super("range-grpc-server", conf, statsLogger);
         this.myEndpoint = myEndpoint;
+        this.schedulerResource = resources.scheduler();
+        this.scheduler = SharedResourceManager.shared().get(schedulerResource);
         if (null != localServerName) {
             InProcessServerBuilder serverBuilder = InProcessServerBuilder
                 .forName(localServerName)
@@ -77,7 +80,7 @@ public class GrpcServer extends AbstractLifecycleComponent<StorageServerConfigur
         } else {
             ProxyHandlerRegistry.Builder proxyRegistryBuilder = ProxyHandlerRegistry.newBuilder()
                 .setChannelFinder(storageContainerStore);
-            for (ServerServiceDefinition definition : GrpcServices.create(null)) {
+            for (ServerServiceDefinition definition : GrpcServices.create(null, scheduler)) {
                 proxyRegistryBuilder = proxyRegistryBuilder.addService(definition);
             }
             this.grpcServer = ServerBuilder.forPort(this.myEndpoint.getPort())
@@ -108,7 +111,8 @@ public class GrpcServer extends AbstractLifecycleComponent<StorageServerConfigur
     }
 
     @Override
-    protected void doClose() throws IOException {
+    protected void doClose() {
+        SharedResourceManager.shared().release(schedulerResource, scheduler);
     }
 
 }
