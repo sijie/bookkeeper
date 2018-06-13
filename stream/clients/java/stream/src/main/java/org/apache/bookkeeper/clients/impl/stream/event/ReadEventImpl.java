@@ -28,11 +28,11 @@ import org.apache.bookkeeper.api.stream.ReadEvent;
  * The default implementation of {@link ReadEvent}.
  */
 @Setter(AccessLevel.PACKAGE)
-class ReadEventImpl<KeyT, ValueT>
+public class ReadEventImpl<KeyT, ValueT>
         extends AbstractEventImpl<KeyT, ValueT>
         implements ReadEvent<KeyT, ValueT> {
 
-    static class Recycler<KeyT, ValueT>
+    public static class Recycler<KeyT, ValueT>
         extends io.netty.util.Recycler<ReadEventImpl<KeyT, ValueT>> {
 
         @Override

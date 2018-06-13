@@ -20,6 +20,7 @@ package org.apache.bookkeeper.clients.impl.internal.api;
 
 import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.clients.impl.container.StorageContainerChannel;
+import org.apache.bookkeeper.clients.impl.container.StorageContainerChannelManager;
 import org.apache.bookkeeper.common.util.AutoAsyncCloseable;
 import org.apache.bookkeeper.stream.proto.StreamProperties;
 
@@ -29,6 +30,13 @@ import org.apache.bookkeeper.stream.proto.StreamProperties;
  * <p>All connections/errors should be handled in this class and its related subclasses.
  */
 public interface StorageServerClientManager extends AutoAsyncCloseable {
+
+    /**
+     * Get the storage container channel manager that manages channels to containers.
+     *
+     * @return storage container channel manager.
+     */
+    StorageContainerChannelManager getStorageContainerChannelManager();
 
     /**
      * Get the channel connected to a storage container <i>scId</i>.
