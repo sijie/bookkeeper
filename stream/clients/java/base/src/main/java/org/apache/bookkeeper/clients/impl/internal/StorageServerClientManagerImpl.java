@@ -90,8 +90,8 @@ public class StorageServerClientManagerImpl
         this.metaRangeClients = Maps.newConcurrentMap();
     }
 
-    @VisibleForTesting
-    StorageContainerChannelManager getStorageContainerChannelManager() {
+    @Override
+    public StorageContainerChannelManager getStorageContainerChannelManager() {
         return scChannelManager;
     }
 
