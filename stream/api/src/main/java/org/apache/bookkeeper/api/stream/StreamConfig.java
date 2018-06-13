@@ -20,6 +20,7 @@
 package org.apache.bookkeeper.api.stream;
 
 import lombok.Builder;
+import lombok.Getter;
 import lombok.experimental.Accessors;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
@@ -33,6 +34,7 @@ import org.apache.bookkeeper.common.router.HashRouter;
 @InterfaceStability.Evolving
 @Builder
 @Accessors(fluent = true)
+@Getter
 public class StreamConfig<KeyT, ValueT> {
 
     /**

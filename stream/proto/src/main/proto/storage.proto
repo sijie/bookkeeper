@@ -48,15 +48,21 @@ enum StatusCode {
     // 9xx: revisions, versions 
     BAD_VERSION                 = 900;
     BAD_REVISION                = 901;
+    SMALLER_REVISION            = 902;
 
     // STREAM RANGE related
 
     // 10xx: STREAM RANGE write related
     CONDITIONAL_WRITE_FAILURE   = 1000;
     STREAM_RANGE_FENCED         = 1001;
+    WRITE_CANCELLED             = 1002;
 
-    // 10xx: STREAM RANGE read related
+    // 11xx: STREAM RANGE read related
     END_OF_STREAM_RANGE         = 1100;
+
+    // 12xx: Event related
+    INVALID_EVENT               = 1200;
+    INVALID_EVENT_SET           = 1201;
 
     // ROOT and META RANGE related
 
@@ -73,6 +79,15 @@ enum StatusCode {
     STREAMSNAPSHOT_EXISTS       = 2104;
     STREAMSNAPSHOT_NOT_FOUND    = 2105;
     END_OF_STREAM               = 2106;
+
+    // 22xx: Reader
+    INVALID_READGROUP_NAME      = 2200;
+    READGROUP_EXISTS            = 2201;
+    READGROUP_NOT_FOUND         = 2202;
+    INVALID_READER_NAME         = 2203;
+    READER_EXISTS               = 2204;
+    READER_NOT_FOUND            = 2205;
+    READER_REINIT_REQUIRED      = 2206;
 
     // 3xxx: GROUP related
     WRONG_GROUP_LOCATION        = 3000;

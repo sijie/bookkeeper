@@ -59,6 +59,7 @@ message RangePosition {
     int64 range_id  = 1;
     int64 offset    = 2;
     int64 seq_num   = 3;
+    int32 slot_id   = 4;
 }
 
 message StreamPosition {
