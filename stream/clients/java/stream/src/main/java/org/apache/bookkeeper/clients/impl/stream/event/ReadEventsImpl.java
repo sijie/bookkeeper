@@ -51,6 +51,7 @@ public class ReadEventsImpl<KeyT, ValueT> implements ReadEvents<KeyT, ValueT> {
     private final ReadEventImpl.Recycler<KeyT, ValueT> eventRecycler;
     private String streamName;
     private EventSet.Reader<KeyT, ValueT> reader;
+    private int estimatedSize = 0;
 
     private ReadEventsImpl(Handle<ReadEventsImpl<KeyT, ValueT>> handle,
                            ReadEventImpl.Recycler<KeyT, ValueT> eventRecycler) {
@@ -78,6 +79,16 @@ public class ReadEventsImpl<KeyT, ValueT> implements ReadEvents<KeyT, ValueT> {
         event.setTimestamp(reader.getEventTime());
 
         return event;
+    }
+
+    @Override
+    public int getEstimatedSize() {
+        return estimatedSize;
+    }
+
+    @Override
+    public int numEvents() {
+        return reader.numEvents();
     }
 
     @Override
