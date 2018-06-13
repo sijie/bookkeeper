@@ -30,6 +30,13 @@ import org.apache.bookkeeper.common.util.AutoAsyncCloseable;
 public interface Writer<KeyT, ValueT> extends AutoAsyncCloseable {
 
     /**
+     * Return the event builder.
+     *
+     * @return event builder to build events to append to the stream.
+     */
+    WriteEventBuilder<KeyT, ValueT> eventBuilder();
+
+    /**
      * Initialize the writer.
      *
      * @return the initialized writer.

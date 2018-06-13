@@ -39,6 +39,20 @@ public interface ReadEvents<KeyT, ValueT> extends AutoCloseable {
     ReadEvent<KeyT, ValueT> next();
 
     /**
+     * Returns the num of events of this events batch.
+     *
+     * @return the num of events in this events batch.
+     */
+    int numEvents();
+
+    /**
+     * Return the estimated size of this events batch.
+     *
+     * @return the estimated size of this events batch.
+     */
+    int getEstimatedSize();
+
+    /**
      * {@inheritDoc}
      */
     void close();

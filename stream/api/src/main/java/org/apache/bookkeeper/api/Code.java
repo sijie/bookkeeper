@@ -35,7 +35,7 @@ public enum Code {
 
     OK(0),
 
-    // 4xx: client error3
+    // 4xx: client errors
     BAD_REQUEST(400),
     ILLEGAL_OP(403),
     INVALID_ARGUMENT(412),
@@ -52,8 +52,27 @@ public enum Code {
     BAD_REVISION(901),
     SMALLER_REVISION(902),
 
+    // 10xx: STREAM write related
+    CONDITIONAL_WRITE_FAILURE(1000),
+    WRITE_CANCELLED(1002),
+
+    // 12xx: Event related
+    INVALID_EVENT(1200),
+    INVALID_EVENT_SET(1201),
+
+    // 20xx: Namespace Related
+    INVALID_NAMESPACE_NAME(2000),
+    NAMESPACE_EXISTS(2001),
+    NAMESPACE_NOT_FOUND(2002),
+
     // 21xx: Stream API
+    INVALID_STREAM_NAME(2100),
+    STREAM_EXISTS(2101),
+    STREAM_NOT_FOUND(2102),
     END_OF_STREAM(2106),
+
+    // 22xx: reader related errors
+    READER_REINIT_REQUIRED(2206),
 
     // 6xxx: KV API
     INVALID_KEY(6000),

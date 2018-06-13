@@ -19,7 +19,10 @@
 
 package org.apache.bookkeeper.api.stream;
 
+import java.time.Duration;
 import lombok.Builder;
+import lombok.Builder.Default;
+import lombok.Getter;
 import lombok.experimental.Accessors;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
@@ -31,5 +34,16 @@ import org.apache.bookkeeper.common.annotation.InterfaceStability;
 @InterfaceStability.Evolving
 @Builder
 @Accessors(fluent = true)
+@Getter
 public class WriterConfig {
+
+    @Default
+    int maxBufferSize = 128 * 1024; // 128KB
+
+    @Default
+    int maxBufferedEvents = 8192;
+
+    @Default
+    Duration flushDuration = Duration.ofMillis(1);
+
 }

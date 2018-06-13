@@ -19,6 +19,7 @@
 
 package org.apache.bookkeeper.api.stream;
 
+import java.io.Serializable;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
@@ -27,5 +28,41 @@ import org.apache.bookkeeper.common.annotation.InterfaceStability;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface Position {
+public interface Position extends Serializable {
+
+    Position HEAD = new Position() {
+        @Override
+        public int hashCode() {
+            return "HEAD".hashCode();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return HEAD == obj;
+        }
+
+        @Override
+        public String toString() {
+            return "TAIL";
+        }
+    };
+
+    Position TAIL = new Position() {
+
+        @Override
+        public int hashCode() {
+            return "TAIL".hashCode();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return TAIL == obj;
+        }
+
+        @Override
+        public String toString() {
+            return "TAIL";
+        }
+    };
+
 }
