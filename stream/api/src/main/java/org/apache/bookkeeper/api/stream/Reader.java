@@ -17,8 +17,8 @@
  */
 package org.apache.bookkeeper.api.stream;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.apache.bookkeeper.api.stream.exceptions.StreamApiException;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 
@@ -45,6 +45,14 @@ public interface Reader<KeyT, ValueT> extends AutoCloseable {
      * @param timeUnit time unit of the wait time.
      * @return the read events. it contains an iterator to iterate over the events.
      */
-    CompletableFuture<ReadEvents<KeyT, ValueT>> readNext(long waitTime, TimeUnit timeUnit);
+    ReadEvents<KeyT, ValueT> readNext(long waitTime, TimeUnit timeUnit)
+        throws StreamApiException;
+
+    /**
+     * Return the current reader position.
+     *
+     * @return the current reader position.
+     */
+    Position getPosition();
 
 }
