@@ -19,8 +19,8 @@
 package org.apache.bookkeeper.api.stream.exceptions;
 
 import lombok.Getter;
+import org.apache.bookkeeper.api.Code;
 import org.apache.bookkeeper.api.exceptions.ApiException;
-import org.apache.bookkeeper.api.kv.result.Code;
 
 /**
  * Stream Api Exception.

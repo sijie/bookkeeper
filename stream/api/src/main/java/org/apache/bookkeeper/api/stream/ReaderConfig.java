@@ -20,6 +20,8 @@
 package org.apache.bookkeeper.api.stream;
 
 import lombok.Builder;
+import lombok.Builder.Default;
+import lombok.Getter;
 import lombok.experimental.Accessors;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
@@ -31,5 +33,13 @@ import org.apache.bookkeeper.common.annotation.InterfaceStability;
 @InterfaceStability.Evolving
 @Builder
 @Accessors(fluent = true)
+@Getter
 public class ReaderConfig {
+
+    /**
+     * Returns the max readahead cache size.
+     */
+    @Default
+    public long maxReadAheadCacheSize = 4L * 1024 * 1024; // 4MB
+
 }
