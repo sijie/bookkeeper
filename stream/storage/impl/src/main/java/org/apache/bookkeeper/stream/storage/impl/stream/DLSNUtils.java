@@ -27,7 +27,7 @@ final class DLSNUtils {
 
     private DLSNUtils() {}
 
-    static final long getRangeSeqNum(DLSN dlsn) {
+    static long getRangeSeqNum(DLSN dlsn) {
         long logSegmentId = dlsn.getLogSegmentSequenceNo();
         long entryId = dlsn.getEntryId();
 
@@ -38,7 +38,7 @@ final class DLSNUtils {
         return seqNum;
     }
 
-    static final DLSN getDLSN(long seqNum) {
+    static DLSN getDLSN(long seqNum) {
         // Demultiplex log segment id and entry id from seqNum
         long logSegmentId = seqNum >>> 28;
         long entryId = seqNum & 0x0F_FF_FF_FFL;
