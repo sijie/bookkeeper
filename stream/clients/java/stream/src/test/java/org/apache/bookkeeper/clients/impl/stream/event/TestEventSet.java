@@ -29,9 +29,11 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicReference;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.clients.impl.stream.event.EventSet.Reader;
 import org.apache.bookkeeper.clients.impl.stream.event.EventSet.Writer;
 import org.apache.bookkeeper.common.coder.Coder;
+import org.apache.bookkeeper.common.coder.StringUtf8Coder;
 import org.apache.bookkeeper.common.coder.VarIntCoder;
 import org.apache.bookkeeper.stream.proto.CompressionCodecType;
 import org.apache.bookkeeper.stream.proto.EventSetType;
@@ -40,11 +42,12 @@ import org.junit.Test;
 /**
  * Unit Test for {@link EventSet}.
  */
+@Slf4j
 public class TestEventSet {
 
     private static final Random RAND = new Random(System.currentTimeMillis());
 
-    @Test(timeout = 10000, expected = NullPointerException.class)
+    @Test(expected = NullPointerException.class)
     public void testBuildWriterWithNullKeyCoder() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(null)
@@ -57,7 +60,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = NullPointerException.class)
+    @Test(expected = NullPointerException.class)
     public void testBuildWriterWithNullValueCoder() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -70,7 +73,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = NullPointerException.class)
+    @Test(expected = NullPointerException.class)
     public void testBuildWriterWithNullCompressionCodec() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -83,7 +86,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = IllegalArgumentException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testBuildWriterWithIllegalCompressionCodec() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -96,7 +99,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = NullPointerException.class)
+    @Test(expected = NullPointerException.class)
     public void testBuildWriterWithNullEventSetType() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -109,7 +112,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = IllegalArgumentException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testBuildWriterWithIllegalEventSetType() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -122,7 +125,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = IllegalArgumentException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testBuildWriterWithNonPositiveBufferSize() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -135,7 +138,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = IllegalArgumentException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testBuildWriterWithIllegalMaxNumEvents() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -148,7 +151,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = IllegalArgumentException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testBuildWriterWithNegativeMaxNumEvents() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -161,7 +164,7 @@ public class TestEventSet {
             .build();
     }
 
-    @Test(timeout = 10000, expected = IllegalArgumentException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testBuildWriterWithInvalidWriterId() {
         EventSet.<Integer, Integer>newWriterBuilder()
             .withKeyCoder(VarIntCoder.of())
@@ -186,7 +189,7 @@ public class TestEventSet {
                                                       List<AtomicReference<V>> actual) {
         assertEquals(expected.size(), actual.size());
         for (int i = 0; i < expected.size(); i++) {
-            assertTrue(Objects.equal(expected.get(i).get(), actual.get(i).get()));
+            assertEquals(expected.get(i).get(), actual.get(i).get());
         }
     }
 
@@ -299,7 +302,23 @@ public class TestEventSet {
         -1,
     };
 
-    @Test(timeout = 10000)
+    private static final String[] STRING_VALUES = {
+        "dog",
+        "cat",
+        "mouse",
+        "tiger",
+        "fish",
+        "flower",
+        "world",
+        "pulsar",
+        "hadoop",
+        "test newline",
+        "a longer string with spaces and all that",
+        "a string with a \n newline",
+        "スタリング",
+    };
+
+    @Test
     public void testEventSetWriterReaderEqualWithVarIntCoder() throws Exception {
         List<AtomicReference<Integer>> keys =
             Lists.newArrayListWithExpectedSize(INT_VALUES.length);
@@ -329,7 +348,39 @@ public class TestEventSet {
             false);
     }
 
-    @Test(timeout = 10000)
+    @Test
+    public void testEventSetWriterReaderEqualWithVarIntStringCoder() throws Exception {
+        List<AtomicReference<Integer>> keys =
+            Lists.newArrayListWithExpectedSize(INT_VALUES.length);
+        List<AtomicReference<Long>> timestamps =
+            Lists.newArrayListWithExpectedSize(INT_VALUES.length);
+        List<String> values =
+            Lists.newArrayListWithExpectedSize(STRING_VALUES.length);
+        List<Long> sequences =
+            Lists.newArrayListWithExpectedSize(INT_VALUES.length);
+
+        for (int i = 0; i < INT_VALUES.length; i++) {
+            int key = INT_VALUES[i];
+            String value = STRING_VALUES[i];
+            keys.add(new AtomicReference<>(key));
+            timestamps.add(new AtomicReference<>(System.currentTimeMillis()));
+            values.add(value);
+            sequences.add(INVALID_EVENT_SEQUENCE);
+        }
+        eventsetWriterReaderEqual(
+            sequences,
+            keys,
+            timestamps,
+            values,
+            VarIntCoder.of(),
+            StringUtf8Coder.of(),
+            CompressionCodecType.NONE,
+            EventSetType.DATA,
+            1234L,
+            false);
+    }
+
+    @Test
     public void testEventSetWriterReaderEqualWithNullTimestamps() throws Exception {
         List<AtomicReference<Integer>> keys =
             Lists.newArrayListWithExpectedSize(INT_VALUES.length);
@@ -359,7 +410,7 @@ public class TestEventSet {
             false);
     }
 
-    @Test(timeout = 10000)
+    @Test
     public void testEventSetWriterReaderEqualWithNullKeys() throws Exception {
         List<AtomicReference<Integer>> keys =
             Lists.newArrayListWithExpectedSize(INT_VALUES.length);
@@ -388,7 +439,7 @@ public class TestEventSet {
             false);
     }
 
-    @Test(timeout = 10000)
+    @Test
     public void testEventSetWriterReaderEqualWithNullKeysTimestamps()
         throws Exception {
         List<AtomicReference<Integer>> keys =
@@ -418,7 +469,7 @@ public class TestEventSet {
             false);
     }
 
-    @Test(timeout = 10000)
+    @Test
     public void testEventSetWriterReaderEqualWithSpareValues()
         throws Exception {
         List<AtomicReference<Integer>> keys =
@@ -450,7 +501,7 @@ public class TestEventSet {
             false);
     }
 
-    @Test(timeout = 10000)
+    @Test
     public void testEventSetWriterReaderEqualWithIdempotency() throws Exception {
         List<AtomicReference<Integer>> keys =
             Lists.newArrayListWithExpectedSize(INT_VALUES.length);
