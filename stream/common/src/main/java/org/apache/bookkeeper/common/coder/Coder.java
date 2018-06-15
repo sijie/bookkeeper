@@ -93,4 +93,15 @@ public interface Coder<T> extends Serializable {
         return decode(Unpooled.wrappedBuffer(data));
     }
 
+    /**
+     * Return whether a length needs to be prepended when the coder is used in a <b>NESTED</b>
+     * context.
+     *
+     * <p>A <b>NESTED</b> context is such a context where the value being encoded or decoded is
+     * (potentially) a part of a larger bytes buffer, and may have other parts encoded or decoded after it.
+     * For example, when coders are used for encoding/decoding events into/from a event set.
+     *
+     * @return true if a length is required to be prepended when the coder is used in a NESTED context.
+     */
+    boolean isLengthRequiredOnNestedContext();
 }
