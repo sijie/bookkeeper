@@ -55,7 +55,7 @@ public class WriteEventBuilderImpl<KeyT, ValueT> implements WriteEventBuilder<Ke
     @Override
     public WriteEventBuilder<KeyT, ValueT> withTimestamp(long timestamp) {
         this.timestamp = timestamp;
-        return null;
+        return this;
     }
 
     @Override
