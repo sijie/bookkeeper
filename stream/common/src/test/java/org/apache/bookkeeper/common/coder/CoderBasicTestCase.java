@@ -47,5 +47,8 @@ public abstract class CoderBasicTestCase {
 
     public static <T> void coderDecodeEncodeEqual(Coder<T> coder, T value) {
         assertThat(decodeEncode(coder, value), equalTo(value));
+        // test coder with length prepender
+        Coder<T> lengthPrependerCoder = LengthPrependerCoder.of(coder);
+        assertThat(decodeEncode(lengthPrependerCoder, value), equalTo(value));
     }
 }

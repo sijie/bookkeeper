@@ -33,6 +33,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class StringUtf8Coder implements Coder<String> {
 
+    private static final long serialVersionUID = -8146687735381115596L;
+
     /**
      * Get the coder to encode strings in utf-8.
      *
@@ -62,6 +64,12 @@ public final class StringUtf8Coder implements Coder<String> {
     @Override
     public String decode(ByteBuf data) {
         byte[] bytes = ByteBufUtil.getBytes(data);
+        data.readerIndex(data.writerIndex());
         return decode(bytes);
+    }
+
+    @Override
+    public boolean isLengthRequiredOnNestedContext() {
+        return true;
     }
 }

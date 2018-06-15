@@ -20,8 +20,6 @@ package org.apache.bookkeeper.common.coder;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufInputStream;
-import io.netty.buffer.ByteBufOutputStream;
 import java.io.IOException;
 import org.apache.bookkeeper.common.util.VarInt;
 
@@ -47,10 +45,8 @@ public class VarIntCoder implements Coder<Integer> {
         checkNotNull(value, "Can not encode a null integer value");
         checkNotNull(buf, "Can not encode into a null output buffer");
 
-        ByteBufOutputStream output = new ByteBufOutputStream(buf);
-
         try {
-            VarInt.encode(value.intValue(), output);
+            VarInt.encode(value.intValue(), buf);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to encode integer '" + value + "' into the provided buffer", e);
         }
@@ -65,13 +61,16 @@ public class VarIntCoder implements Coder<Integer> {
     public Integer decode(ByteBuf buf) {
         checkNotNull(buf, "Can not decode into a null input buffer");
 
-        ByteBufInputStream input = new ByteBufInputStream(buf);
-
         try {
-            return VarInt.decodeInt(input);
+            return VarInt.decodeInt(buf);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to decode an integration from the provided buffer");
+            throw new IllegalStateException("Failed to decode an integer from the provided buffer", e);
         }
+    }
+
+    @Override
+    public boolean isLengthRequiredOnNestedContext() {
+        return false;
     }
 
 }

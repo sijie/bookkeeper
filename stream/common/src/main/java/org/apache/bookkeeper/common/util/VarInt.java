@@ -17,6 +17,7 @@
  */
 package org.apache.bookkeeper.common.util;
 
+import io.netty.buffer.ByteBuf;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -54,6 +55,17 @@ public class VarInt {
      * @param buf the buffer
      * @throws IOException the io exception
      */
+    public static void encode(int v, ByteBuf buf) throws IOException {
+        encode(convertIntToLongNoSignExtend(v), buf);
+    }
+
+    /**
+     * Encodes the given value onto the buffer.
+     *
+     * @param v   the value
+     * @param buf the buffer
+     * @throws IOException the io exception
+     */
     public static void encode(long v, OutputStream buf) throws IOException {
         do {
             // Encode next 7 bits + terminator bit
@@ -65,6 +77,23 @@ public class VarInt {
     }
 
     /**
+     * Encodes the given value onto the buffer.
+     *
+     * @param v   the value
+     * @param buf the buffer
+     * @throws IOException the io exception
+     */
+    public static void encode(long v, ByteBuf buf) throws IOException {
+        do {
+            // Encode next 7 bits + terminator bit
+            long bits = v & 0x7F;
+            v >>>= 7;
+            int b = (int) (bits | ((v != 0) ? 0x80 : 0));
+            buf.writeByte(b);
+        } while (v != 0);
+    }
+
+    /**
      * Decodes an integer value from the given buffer.
      *
      * @param buf the buffer
@@ -72,6 +101,21 @@ public class VarInt {
      * @throws IOException the io exception
      */
     public static int decodeInt(InputStream buf) throws IOException {
+        long r = decodeLong(buf);
+        if (r < 0 || r >= 1L << 32) {
+            throw new IOException("var int overflow " + r);
+        }
+        return (int) r;
+    }
+
+    /**
+     * Decodes an integer value from the given buffer.
+     *
+     * @param buf the buffer
+     * @return the int value that decoded
+     * @throws IOException the io exception
+     */
+    public static int decodeInt(ByteBuf buf) throws IOException {
         long r = decodeLong(buf);
         if (r < 0 || r >= 1L << 32) {
             throw new IOException("var int overflow " + r);
@@ -93,6 +137,38 @@ public class VarInt {
         do {
             // Get 7 bits from next byte
             b = buf.read();
+            if (b < 0) {
+                if (shift == 0) {
+                    throw new EOFException();
+                } else {
+                    throw new IOException("varint not terminated");
+                }
+            }
+            long bits = b & 0x7F;
+            if (shift >= 64 || (shift == 63 && bits > 1)) {
+                // Out of range
+                throw new IOException("varint too long");
+            }
+            result |= bits << shift;
+            shift += 7;
+        } while ((b & 0x80) != 0);
+        return result;
+    }
+
+    /**
+     * Decodes a long value from the given buffer.
+     *
+     * @param buf the buf
+     * @return the long value that decoded
+     * @throws IOException the io exception
+     */
+    public static long decodeLong(ByteBuf buf) throws IOException {
+        long result = 0;
+        int shift = 0;
+        int b;
+        do {
+            // Get 7 bits from next byte
+            b = buf.readByte() & 0xFF;
             if (b < 0) {
                 if (shift == 0) {
                     throw new EOFException();
