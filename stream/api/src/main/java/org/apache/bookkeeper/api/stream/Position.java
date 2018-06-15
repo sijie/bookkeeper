@@ -31,6 +31,9 @@ import org.apache.bookkeeper.common.annotation.InterfaceStability;
 public interface Position extends Serializable {
 
     Position HEAD = new Position() {
+
+        private static final long serialVersionUID = -3383415678170827794L;
+
         @Override
         public int hashCode() {
             return "HEAD".hashCode();
@@ -48,6 +51,8 @@ public interface Position extends Serializable {
     };
 
     Position TAIL = new Position() {
+
+        private static final long serialVersionUID = 6562771001228524951L;
 
         @Override
         public int hashCode() {

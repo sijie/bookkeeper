@@ -32,6 +32,7 @@ import java.io.IOException;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.coder.Coder;
+import org.apache.bookkeeper.common.coder.LengthPrependerCoder;
 import org.apache.bookkeeper.stream.proto.CompressionCodecType;
 import org.apache.bookkeeper.stream.proto.EventSetFormatType;
 import org.apache.bookkeeper.stream.proto.EventSetFormatVersion;
@@ -339,7 +340,7 @@ public class EventSet {
          * @return writer builder.
          */
         public WriterBuilder<K, V> withKeyCoder(Coder<K> keyCoder) {
-            this.keyCoder = keyCoder;
+            this.keyCoder = LengthPrependerCoder.of(keyCoder);
             return this;
         }
 
@@ -350,7 +351,7 @@ public class EventSet {
          * @return writer builder.
          */
         public WriterBuilder<K, V> withValueCoder(Coder<V> valueCoder) {
-            this.valueCoder = valueCoder;
+            this.valueCoder = LengthPrependerCoder.of(valueCoder);
             return this;
         }
 
@@ -657,7 +658,7 @@ public class EventSet {
          * @return reader builder.
          */
         public ReaderBuilder<K, V> withKeyCoder(Coder<K> keyCoder) {
-            this.keyCoder = keyCoder;
+            this.keyCoder = LengthPrependerCoder.of(keyCoder);
             return this;
         }
 
@@ -668,7 +669,7 @@ public class EventSet {
          * @return reader builder.
          */
         public ReaderBuilder<K, V> withValueCoder(Coder<V> valueCoder) {
-            this.valueCoder = valueCoder;
+            this.valueCoder = LengthPrependerCoder.of(valueCoder);
             return this;
         }
 
