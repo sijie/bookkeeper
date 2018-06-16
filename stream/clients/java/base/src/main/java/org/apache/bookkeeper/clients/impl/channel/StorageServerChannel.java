@@ -35,10 +35,14 @@ import org.apache.bookkeeper.stream.proto.kv.rpc.TableServiceGrpc;
 import org.apache.bookkeeper.stream.proto.kv.rpc.TableServiceGrpc.TableServiceFutureStub;
 import org.apache.bookkeeper.stream.proto.storage.MetaRangeServiceGrpc;
 import org.apache.bookkeeper.stream.proto.storage.MetaRangeServiceGrpc.MetaRangeServiceFutureStub;
+import org.apache.bookkeeper.stream.proto.storage.ReadServiceGrpc;
+import org.apache.bookkeeper.stream.proto.storage.ReadServiceGrpc.ReadServiceStub;
 import org.apache.bookkeeper.stream.proto.storage.RootRangeServiceGrpc;
 import org.apache.bookkeeper.stream.proto.storage.RootRangeServiceGrpc.RootRangeServiceFutureStub;
 import org.apache.bookkeeper.stream.proto.storage.StorageContainerServiceGrpc;
 import org.apache.bookkeeper.stream.proto.storage.StorageContainerServiceGrpc.StorageContainerServiceFutureStub;
+import org.apache.bookkeeper.stream.proto.storage.WriteServiceGrpc;
+import org.apache.bookkeeper.stream.proto.storage.WriteServiceGrpc.WriteServiceStub;
 
 /**
  * A channel connected to a range server.
@@ -66,6 +70,10 @@ public class StorageServerChannel implements AutoCloseable {
     private StorageContainerServiceFutureStub scService;
     @GuardedBy("this")
     private TableServiceFutureStub kvService;
+    @GuardedBy("this")
+    private WriteServiceStub streamWriteService;
+    @GuardedBy("this")
+    private ReadServiceStub streamReadService;
 
     /**
      * Construct a range server channel to a given range server endpoint.
@@ -134,6 +142,24 @@ public class StorageServerChannel implements AutoCloseable {
                 token);
         }
         return kvService;
+    }
+
+    public synchronized WriteServiceStub getStreamWriteService() {
+        if (null == streamWriteService) {
+            streamWriteService = GrpcUtils.configureGrpcStub(
+                WriteServiceGrpc.newStub(channel),
+                token);
+        }
+        return streamWriteService;
+    }
+
+    public synchronized ReadServiceStub getStreamReadService() {
+        if (null == streamReadService) {
+            streamReadService = GrpcUtils.configureGrpcStub(
+                ReadServiceGrpc.newStub(channel),
+                token);
+        }
+        return streamReadService;
     }
 
     /**

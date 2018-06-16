@@ -22,9 +22,11 @@ import static org.apache.bookkeeper.stream.protocol.ProtocolConstants.INVALID_OF
 import static org.apache.bookkeeper.stream.protocol.ProtocolConstants.INVALID_RANGE_ID;
 import static org.apache.bookkeeper.stream.protocol.ProtocolConstants.INVALID_SEQ_NUM;
 
+import com.google.common.base.MoreObjects;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
+import java.util.Objects;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 
 /**
@@ -111,5 +113,30 @@ public class RangePositionImpl extends AbstractReferenceCounted {
     @Override
     public RangePositionImpl touch(Object hint) {
         return this;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(rangeId, rangeOffset, rangeSeqNum);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof RangePositionImpl)) {
+            return false;
+        }
+        RangePositionImpl other = (RangePositionImpl) obj;
+        return rangeId == other.rangeId
+            && rangeOffset == other.rangeOffset
+            && rangeSeqNum == other.rangeSeqNum;
+    }
+
+    @Override
+    public String toString() {
+        return MoreObjects.toStringHelper("RangePos")
+            .add("rid", rangeId)
+            .add("offset", rangeOffset)
+            .add("seqnum", rangeSeqNum)
+            .toString();
     }
 }

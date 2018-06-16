@@ -99,7 +99,11 @@ public class StorageContainerChannel {
 
     @VisibleForTesting
     public synchronized void setStorageServerChannelFuture(CompletableFuture<StorageServerChannel> rsChannelFuture) {
+        CompletableFuture<StorageServerChannel> oldChannelFuture = this.rsChannelFuture;
         this.rsChannelFuture = rsChannelFuture;
+        if (null != oldChannelFuture) {
+            oldChannelFuture.thenAccept(StorageServerChannel::close);
+        }
     }
 
     public CompletableFuture<StorageServerChannel> getStorageContainerChannelFuture() {
@@ -140,7 +144,7 @@ public class StorageContainerChannel {
 
     private void handleFetchStorageContainerInfoFailure(Throwable cause) {
         log.info("Failed to fetch info of storage container ({}) - '{}'. Retry in {} ms ...",
-            new Object[]{scId, cause.getMessage(), ClientConstants.DEFAULT_BACKOFF_START_MS});
+            scId, cause.getMessage(), ClientConstants.DEFAULT_BACKOFF_START_MS);
         executor.schedule(() -> {
             fetchStorageContainerInfo();
         }, ClientConstants.DEFAULT_BACKOFF_START_MS, TimeUnit.MILLISECONDS);
