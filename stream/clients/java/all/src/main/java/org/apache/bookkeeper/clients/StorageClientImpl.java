@@ -32,6 +32,7 @@ import org.apache.bookkeeper.clients.impl.internal.StorageServerClientManagerImp
 import org.apache.bookkeeper.clients.impl.internal.api.StorageServerClientManager;
 import org.apache.bookkeeper.clients.impl.kv.ByteBufTableImpl;
 import org.apache.bookkeeper.clients.impl.kv.PByteBufTableImpl;
+import org.apache.bookkeeper.clients.impl.stream.StreamImpl;
 import org.apache.bookkeeper.clients.utils.ClientResources;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.common.util.AbstractAutoAsyncCloseable;
@@ -67,7 +68,7 @@ class StorageClientImpl extends AbstractAutoAsyncCloseable implements StorageCli
 
     }
 
-    private CompletableFuture<StreamProperties> getStreamProperties(String streamName) {
+    CompletableFuture<StreamProperties> getStreamProperties(String streamName) {
         return this.serverManager.getRootRangeClient().getStream(namespaceName, streamName);
     }
 
@@ -78,7 +79,15 @@ class StorageClientImpl extends AbstractAutoAsyncCloseable implements StorageCli
     @Override
     public <KeyT, ValueT> CompletableFuture<Stream<KeyT, ValueT>>
             openStream(String stream, StreamConfig<KeyT, ValueT> config) {
-        return FutureUtils.exception(new UnsupportedOperationException("Not implemented yet"));
+        return getStreamProperties(stream).thenApply(props ->
+            new StreamImpl<>(
+                namespaceName,
+                props,
+                settings,
+                config,
+                serverManager,
+                scheduler
+            ));
     }
 
 
@@ -134,7 +143,11 @@ class StorageClientImpl extends AbstractAutoAsyncCloseable implements StorageCli
 
     @Override
     public void close() {
-        super.close();
+        try {
+            FutureUtils.result(closeAsync(), 1, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            // ignore the exception
+        }
         scheduler.forceShutdown(100, TimeUnit.MILLISECONDS);
     }
 }
