@@ -44,6 +44,7 @@ public abstract class StreamClusterTestBase extends BookKeeperClusterTestBase {
     protected static final String BKCTL = "/opt/bookkeeper/bin/bkctl";
     protected static final String STREAM_URI = "--service-uri bk://localhost:4181";
     protected static final String TEST_TABLE = "test-table";
+    protected static final String TEST_STREAM = "test-stream";
 
     @BeforeClass
     public static void setupCluster() throws Exception {
@@ -55,6 +56,7 @@ public abstract class StreamClusterTestBase extends BookKeeperClusterTestBase {
             .clusterName(sb.toString())
             .numBookies(3)
             .extraServerComponents("org.apache.bookkeeper.stream.server.StreamStorageLifecycleComponent")
+            .enableContainerLog(true)
             .build();
         BookKeeperClusterTestBase.setupCluster(spec);
         bkCluster.getAnyBookie().execCmd(
@@ -69,6 +71,13 @@ public abstract class StreamClusterTestBase extends BookKeeperClusterTestBase {
             "tables",
             "create",
             TEST_TABLE);
+        // TODO: change this to streams
+        bkCluster.getAnyBookie().execCmd(
+            BKCTL,
+            STREAM_URI,
+            "tables",
+            "create",
+            TEST_STREAM);
     }
 
     @AfterClass

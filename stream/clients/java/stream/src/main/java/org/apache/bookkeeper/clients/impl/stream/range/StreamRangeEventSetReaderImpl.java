@@ -268,6 +268,10 @@ public class StreamRangeEventSetReaderImpl
     }
 
     private synchronized void reconnect(long delay, TimeUnit timeUnit) {
+        if (isClosed()) {
+            return;
+        }
+
         if (null != reconnectTask) {
             return;
         }

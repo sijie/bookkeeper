@@ -249,7 +249,9 @@ class StreamRangeEventSetWriterImpl
 
     @Override
     public void onError(Throwable cause) {
-        executor.submit(() -> unsafeProcessError(cause));
+        if (!executor.isShutdown()) {
+            executor.submit(() -> unsafeProcessError(cause));
+        }
     }
 
     private void unsafeProcessError(Throwable cause) {
