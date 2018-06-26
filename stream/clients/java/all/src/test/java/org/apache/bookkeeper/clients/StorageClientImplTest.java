@@ -19,19 +19,23 @@
 package org.apache.bookkeeper.clients;
 
 import static org.apache.bookkeeper.stream.protocol.ProtocolConstants.DEFAULT_STREAM_CONF;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
-import io.grpc.stub.StreamObserver;
 import io.netty.buffer.ByteBuf;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.api.Code;
 import org.apache.bookkeeper.api.kv.PTable;
 import org.apache.bookkeeper.api.kv.Table;
 import org.apache.bookkeeper.api.stream.Stream;
 import org.apache.bookkeeper.api.stream.StreamConfig;
+import org.apache.bookkeeper.api.stream.exceptions.StreamApiException;
 import org.apache.bookkeeper.clients.grpc.GrpcClientTestBase;
 import org.apache.bookkeeper.clients.impl.kv.ByteBufTableImpl;
 import org.apache.bookkeeper.clients.impl.kv.PByteBufTableImpl;
@@ -41,11 +45,9 @@ import org.apache.bookkeeper.common.coder.StringUtf8Coder;
 import org.apache.bookkeeper.common.coder.VarIntCoder;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.common.router.IntHashRouter;
+import org.apache.bookkeeper.stream.proto.StorageType;
+import org.apache.bookkeeper.stream.proto.StreamConfiguration;
 import org.apache.bookkeeper.stream.proto.StreamProperties;
-import org.apache.bookkeeper.stream.proto.storage.GetStreamRequest;
-import org.apache.bookkeeper.stream.proto.storage.GetStreamResponse;
-import org.apache.bookkeeper.stream.proto.storage.RootRangeServiceGrpc.RootRangeServiceImplBase;
-import org.apache.bookkeeper.stream.proto.storage.StatusCode;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.powermock.api.mockito.PowerMockito;
@@ -61,6 +63,7 @@ import org.powermock.reflect.Whitebox;
     StorageClientImpl.class,
     StreamImpl.class
 })
+@Slf4j
 public class StorageClientImplTest extends GrpcClientTestBase {
 
     private static final String NAMESPACE = "test-namespace";
@@ -76,27 +79,11 @@ public class StorageClientImplTest extends GrpcClientTestBase {
 
     @Override
     protected void doSetup() {
-        RootRangeServiceImplBase rootRangeService = new RootRangeServiceImplBase() {
-            @Override
-            public void getStream(GetStreamRequest request,
-                                  StreamObserver<GetStreamResponse> responseObserver) {
-                responseObserver.onNext(GetStreamResponse.newBuilder()
-                    .setCode(StatusCode.SUCCESS)
-                    .setStreamProps(STREAM_PROPERTIES)
-                    .build());
-                responseObserver.onCompleted();
-            }
-        };
-        serviceRegistry.addService(rootRangeService.bindService());
-
         this.client = spy(new StorageClientImpl(
             NAMESPACE,
             settings,
             ClientResources.create()
         ));
-
-        when(client.getStreamProperties(anyString()))
-            .thenReturn(FutureUtils.value(STREAM_PROPERTIES));
     }
 
     @Override
@@ -107,6 +94,14 @@ public class StorageClientImplTest extends GrpcClientTestBase {
     @SuppressWarnings("unchecked")
     @Test
     public void testOpenStream() throws Exception {
+        StreamProperties streamProps = StreamProperties.newBuilder(STREAM_PROPERTIES)
+            .setStreamConf(StreamConfiguration.newBuilder(DEFAULT_STREAM_CONF)
+                .setStorageType(StorageType.STREAM)
+                .build())
+            .build();
+        when(client.getStreamProperties(anyString()))
+            .thenReturn(FutureUtils.value(streamProps));
+
         StreamImpl<Integer, String> streamImpl = mock(StreamImpl.class);
 
         PowerMockito.whenNew(StreamImpl.class)
@@ -127,7 +122,45 @@ public class StorageClientImplTest extends GrpcClientTestBase {
 
     @SuppressWarnings("unchecked")
     @Test
+    public void testOpenStreamIllegalOp() throws Exception {
+        StreamProperties streamProps = StreamProperties.newBuilder(STREAM_PROPERTIES)
+            .setStreamConf(StreamConfiguration.newBuilder(DEFAULT_STREAM_CONF)
+                .setStorageType(StorageType.TABLE)
+                .build())
+            .build();
+        when(client.getStreamProperties(anyString()))
+            .thenReturn(FutureUtils.value(streamProps));
+
+        StreamImpl<Integer, String> streamImpl = mock(StreamImpl.class);
+
+        PowerMockito.whenNew(StreamImpl.class)
+            .withAnyArguments()
+            .thenReturn(streamImpl);
+        StreamConfig<Integer, String> streamConfig = StreamConfig.<Integer, String>builder()
+            .keyCoder(VarIntCoder.of())
+            .valueCoder(StringUtf8Coder.of())
+            .keyRouter(IntHashRouter.of())
+            .build();
+        try {
+            FutureUtils.result(client.openStream(STREAM_NAME, streamConfig));
+            fail("Should fail #openStream on opening a non-stream storage entity");
+        } catch (StreamApiException sae) {
+            assertEquals(Code.ILLEGAL_OP, sae.getCode());
+        }
+
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     public void testOpenPTable() throws Exception {
+        StreamProperties streamProps = StreamProperties.newBuilder(STREAM_PROPERTIES)
+            .setStreamConf(StreamConfiguration.newBuilder(DEFAULT_STREAM_CONF)
+                .setStorageType(StorageType.TABLE)
+                .build())
+            .build();
+        when(client.getStreamProperties(anyString()))
+            .thenReturn(FutureUtils.value(streamProps));
+
         PByteBufTableImpl tableImpl = mock(PByteBufTableImpl.class);
         when(tableImpl.initialize()).thenReturn(FutureUtils.value(tableImpl));
 
@@ -145,6 +178,14 @@ public class StorageClientImplTest extends GrpcClientTestBase {
     @SuppressWarnings("unchecked")
     @Test
     public void testOpenTable() throws Exception {
+        StreamProperties streamProps = StreamProperties.newBuilder(STREAM_PROPERTIES)
+            .setStreamConf(StreamConfiguration.newBuilder(DEFAULT_STREAM_CONF)
+                .setStorageType(StorageType.TABLE)
+                .build())
+            .build();
+        when(client.getStreamProperties(anyString()))
+            .thenReturn(FutureUtils.value(streamProps));
+
         PByteBufTableImpl tableImpl = mock(PByteBufTableImpl.class);
         when(tableImpl.initialize()).thenReturn(FutureUtils.value(tableImpl));
 
@@ -159,5 +200,31 @@ public class StorageClientImplTest extends GrpcClientTestBase {
         ByteBufTableImpl bytesTableImpl = (ByteBufTableImpl) returnedTableImpl;
 
         assertSame(tableImpl, Whitebox.getInternalState(bytesTableImpl, "underlying"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testOpenPTableIllegalOp() throws Exception {
+        StreamProperties streamProps = StreamProperties.newBuilder(STREAM_PROPERTIES)
+            .setStreamConf(StreamConfiguration.newBuilder(DEFAULT_STREAM_CONF)
+                .setStorageType(StorageType.STREAM)
+                .build())
+            .build();
+        when(client.getStreamProperties(anyString()))
+            .thenReturn(FutureUtils.value(streamProps));
+
+        PByteBufTableImpl tableImpl = mock(PByteBufTableImpl.class);
+        when(tableImpl.initialize()).thenReturn(FutureUtils.value(tableImpl));
+
+        PowerMockito.whenNew(PByteBufTableImpl.class)
+            .withAnyArguments()
+            .thenReturn(tableImpl);
+
+        try {
+            FutureUtils.result(client.openPTable(STREAM_NAME));
+            fail("Should fail #openTable on opening a non-table storage entity");
+        } catch (StreamApiException sae) {
+            assertEquals(Code.ILLEGAL_OP, sae.getCode());
+        }
     }
 }
