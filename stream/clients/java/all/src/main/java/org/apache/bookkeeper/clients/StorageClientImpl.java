@@ -22,11 +22,13 @@ import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.api.Code;
 import org.apache.bookkeeper.api.StorageClient;
 import org.apache.bookkeeper.api.kv.PTable;
 import org.apache.bookkeeper.api.kv.Table;
 import org.apache.bookkeeper.api.stream.Stream;
 import org.apache.bookkeeper.api.stream.StreamConfig;
+import org.apache.bookkeeper.api.stream.exceptions.StreamApiException;
 import org.apache.bookkeeper.clients.config.StorageClientSettings;
 import org.apache.bookkeeper.clients.impl.internal.StorageServerClientManagerImpl;
 import org.apache.bookkeeper.clients.impl.internal.api.StorageServerClientManager;
@@ -39,6 +41,7 @@ import org.apache.bookkeeper.common.util.AbstractAutoAsyncCloseable;
 import org.apache.bookkeeper.common.util.ExceptionUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.common.util.SharedResourceManager;
+import org.apache.bookkeeper.stream.proto.StorageType;
 import org.apache.bookkeeper.stream.proto.StreamProperties;
 
 /**
@@ -79,15 +82,25 @@ class StorageClientImpl extends AbstractAutoAsyncCloseable implements StorageCli
     @Override
     public <KeyT, ValueT> CompletableFuture<Stream<KeyT, ValueT>>
             openStream(String stream, StreamConfig<KeyT, ValueT> config) {
-        return getStreamProperties(stream).thenApply(props ->
-            new StreamImpl<>(
-                namespaceName,
-                props,
-                settings,
-                config,
-                serverManager,
-                scheduler
-            ));
+        return getStreamProperties(stream).thenCompose(props -> {
+            if (log.isInfoEnabled()) {
+                log.info("Retrieved stream properties for stream {} : {}", stream, props);
+            }
+            if (StorageType.STREAM != props.getStreamConf().getStorageType()) {
+                return FutureUtils.exception(
+                    new StreamApiException(Code.ILLEGAL_OP,
+                        "Can't open a non-stream storage entity : " + props.getStreamConf().getStorageType()));
+            } else {
+                return FutureUtils.value(new StreamImpl<>(
+                    namespaceName,
+                    props,
+                    settings,
+                    config,
+                    serverManager,
+                    scheduler
+                ));
+            }
+        });
     }
 
 
@@ -114,7 +127,13 @@ class StorageClientImpl extends AbstractAutoAsyncCloseable implements StorageCli
         FutureUtils.proxyTo(
             getStreamProperties(streamName).thenComposeAsync(props -> {
                 if (log.isInfoEnabled()) {
-                    log.info("Retrieved stream properties for stream {} : {}", streamName, props);
+                    log.info("Retrieved table properties for table {} : {}", streamName, props);
+                }
+                if (StorageType.TABLE != props.getStreamConf().getStorageType()) {
+                    return FutureUtils.exception(new StreamApiException(
+                        Code.ILLEGAL_OP,
+                        "Can't open a non-table storage entity : " + props.getStreamConf().getStorageType())
+                    );
                 }
                 return new PByteBufTableImpl(
                     streamName,
