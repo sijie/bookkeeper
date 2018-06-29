@@ -19,6 +19,7 @@
 package org.apache.bookkeeper.tests.integration.stream;
 
 import static org.apache.bookkeeper.common.concurrent.FutureUtils.result;
+import static org.apache.bookkeeper.tests.integration.stream.BkCtlCommandTester.TEST_STREAM;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;

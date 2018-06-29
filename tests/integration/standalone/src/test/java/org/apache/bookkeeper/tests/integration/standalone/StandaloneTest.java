@@ -55,42 +55,4 @@ public class StandaloneTest {
             result.getStdout().contains("100 entries written to ledger"));
     }
 
-    //
-    // `namespace` commands
-    //
-
-    @Test
-    public void createNamespace() throws Exception {
-        String nsName = testName.getMethodName();
-        ExecResult result = bkContainer.execCmd(
-            "/opt/bookkeeper/bin/bkctl",
-            "-u bk://localhost:4181",
-            "namespace",
-            "create",
-            nsName
-        );
-        assertTrue(
-            result.getStdout(),
-            result.getStdout().contains("Successfully created namespace '" + nsName + "'"));
-    }
-
-    //
-    // `tables` commands
-    //
-
-    @Test
-    public void createTable() throws Exception {
-        String tableName = testName.getMethodName();
-        ExecResult result = bkContainer.execCmd(
-            "/opt/bookkeeper/bin/bkctl",
-            "-u bk://localhost:4181",
-            "tables",
-            "create",
-            tableName
-        );
-        assertTrue(
-            result.getStdout(),
-            result.getStdout().contains("Successfully created stream '" + tableName + "'"));
-    }
-
 }

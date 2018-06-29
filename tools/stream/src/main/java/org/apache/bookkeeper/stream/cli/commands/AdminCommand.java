@@ -65,7 +65,9 @@ public abstract class AdminCommand<ClientFlagsT extends CliFlags> extends BKComm
             run(admin, bkFlags, cmdFlags);
             return true;
         } catch (Exception e) {
-            log.error("Failed to process stream admin command", e);
+            spec.console().println("Failed to process admin command '"
+                + spec.parent() + " " + spec.name() + "': arguments = " + cmdFlags.arguments);
+            e.printStackTrace(spec.console());
             return false;
         }
     }

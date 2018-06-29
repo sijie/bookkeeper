@@ -18,6 +18,11 @@
 
 package org.apache.bookkeeper.tests.integration.stream;
 
+import static org.apache.bookkeeper.tests.integration.stream.BkCtlCommandTester.BKCTL;
+import static org.apache.bookkeeper.tests.integration.stream.BkCtlCommandTester.TEST_STREAM;
+import static org.apache.bookkeeper.tests.integration.stream.BkCtlCommandTester.TEST_TABLE;
+import static org.junit.Assert.assertTrue;
+
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
@@ -32,6 +37,7 @@ import org.apache.bookkeeper.tests.integration.cluster.BookKeeperClusterTestBase
 import org.apache.bookkeeper.tests.integration.topologies.BKClusterSpec;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.testcontainers.containers.Container.ExecResult;
 
 /**
  * Similar as {@link org.apache.bookkeeper.tests.integration.cluster.BookKeeperClusterTestBase},
@@ -41,10 +47,7 @@ import org.junit.BeforeClass;
 public abstract class StreamClusterTestBase extends BookKeeperClusterTestBase {
 
     protected static Random rand = new Random();
-    protected static final String BKCTL = "/opt/bookkeeper/bin/bkctl";
     protected static final String STREAM_URI = "--service-uri bk://localhost:4181";
-    protected static final String TEST_TABLE = "test-table";
-    protected static final String TEST_STREAM = "test-stream";
 
     @BeforeClass
     public static void setupCluster() throws Exception {
@@ -56,7 +59,6 @@ public abstract class StreamClusterTestBase extends BookKeeperClusterTestBase {
             .clusterName(sb.toString())
             .numBookies(3)
             .extraServerComponents("org.apache.bookkeeper.stream.server.StreamStorageLifecycleComponent")
-            .enableContainerLog(true)
             .build();
         BookKeeperClusterTestBase.setupCluster(spec);
         bkCluster.getAnyBookie().execCmd(
@@ -65,19 +67,24 @@ public abstract class StreamClusterTestBase extends BookKeeperClusterTestBase {
             "namespace",
             "create",
             "default");
-        bkCluster.getAnyBookie().execCmd(
+        ExecResult result = bkCluster.getAnyBookie().execCmd(
             BKCTL,
             STREAM_URI,
             "tables",
             "create",
             TEST_TABLE);
-        // TODO: change this to streams
-        bkCluster.getAnyBookie().execCmd(
+        assertTrue(
+            result.getStdout(),
+            result.getStdout().contains("Successfully created table '" + TEST_TABLE + "'"));
+        result = bkCluster.getAnyBookie().execCmd(
             BKCTL,
             STREAM_URI,
-            "tables",
+            "streams",
             "create",
             TEST_STREAM);
+        assertTrue(
+            result.getStdout(),
+            result.getStdout().contains("Successfully created stream '" + TEST_STREAM + "'"));
     }
 
     @AfterClass

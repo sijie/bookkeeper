@@ -17,31 +17,31 @@
  */
 package org.apache.bookkeeper.stream.cli;
 
-import org.apache.bookkeeper.stream.cli.commands.namespace.CreateNamespaceCommand;
-import org.apache.bookkeeper.stream.cli.commands.namespace.DeleteNamespaceCommand;
-import org.apache.bookkeeper.stream.cli.commands.namespace.GetNamespaceCommand;
+import org.apache.bookkeeper.stream.cli.commands.stream.CreateStreamCommand;
+import org.apache.bookkeeper.stream.cli.commands.stream.DeleteStreamCommand;
+import org.apache.bookkeeper.stream.cli.commands.stream.GetStreamCommand;
 import org.apache.bookkeeper.tools.common.BKFlags;
 import org.apache.bookkeeper.tools.framework.CliCommandGroup;
 import org.apache.bookkeeper.tools.framework.CliSpec;
 
 /**
- * Commands that operates stream storage namespaces.
+ * Commands that admin streams.
  */
-public class NamespaceCommandGroup extends CliCommandGroup<BKFlags> {
+public class StreamAdminCommandGroup extends CliCommandGroup<BKFlags> {
 
-    private static final String NAME = "namespace";
-    private static final String DESC = "Commands on operating namespaces";
+    private static final String NAME = "streams";
+    private static final String DESC = "Commands on operating streams";
 
     private static final CliSpec<BKFlags> spec = CliSpec.<BKFlags>newBuilder()
         .withName(NAME)
         .withDescription(DESC)
         .withParent("bkctl")
-        .addCommand(new CreateNamespaceCommand())
-        .addCommand(new DeleteNamespaceCommand())
-        .addCommand(new GetNamespaceCommand())
+        .addCommand(new CreateStreamCommand())
+        .addCommand(new DeleteStreamCommand())
+        .addCommand(new GetStreamCommand())
         .build();
 
-    public NamespaceCommandGroup() {
+    public StreamAdminCommandGroup() {
         super(spec);
     }
 }

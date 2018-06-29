@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.bookkeeper.stream.cli.commands.table;
+package org.apache.bookkeeper.stream.cli.commands.stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.bookkeeper.common.concurrent.FutureUtils.result;
@@ -25,7 +25,7 @@ import org.apache.bookkeeper.clients.admin.StorageAdminClient;
 import org.apache.bookkeeper.clients.exceptions.ClientException;
 import org.apache.bookkeeper.clients.exceptions.StreamNotFoundException;
 import org.apache.bookkeeper.stream.cli.commands.AdminCommand;
-import org.apache.bookkeeper.stream.cli.commands.table.CreateTableCommand.Flags;
+import org.apache.bookkeeper.stream.cli.commands.stream.CreateStreamCommand.Flags;
 import org.apache.bookkeeper.stream.proto.StorageType;
 import org.apache.bookkeeper.stream.proto.StreamConfiguration;
 import org.apache.bookkeeper.stream.proto.StreamProperties;
@@ -34,12 +34,12 @@ import org.apache.bookkeeper.tools.framework.CliFlags;
 import org.apache.bookkeeper.tools.framework.CliSpec;
 
 /**
- * Command to create a table.
+ * Command to create a stream.
  */
-public class CreateTableCommand extends AdminCommand<Flags> {
+public class CreateStreamCommand extends AdminCommand<Flags> {
 
     private static final String NAME = "create";
-    private static final String DESC = "Create a table";
+    private static final String DESC = "Create a stream";
 
     /**
      * Flags for the create table command.
@@ -47,12 +47,12 @@ public class CreateTableCommand extends AdminCommand<Flags> {
     public static class Flags extends CliFlags {
     }
 
-    public CreateTableCommand() {
+    public CreateStreamCommand() {
         super(CliSpec.<Flags>newBuilder()
             .withName(NAME)
             .withDescription(DESC)
             .withFlags(new Flags())
-            .withArgumentsUsage("<table-name>")
+            .withArgumentsUsage("<stream-name>")
             .build());
     }
 
@@ -61,36 +61,36 @@ public class CreateTableCommand extends AdminCommand<Flags> {
                        BKFlags globalFlags,
                        Flags flags) throws Exception {
         checkArgument(!flags.arguments.isEmpty(),
-            "Table name is not provided");
+            "Stream name is not provided");
 
-        String tableName = flags.arguments.get(0);
+        String streamName = flags.arguments.get(0);
 
         boolean created = false;
-        spec.console().println("Creating table '" + tableName + "' ...");
+        spec.console().println("Creating stream '" + streamName + "' ...");
         while (!created) {
             try {
                 StreamProperties nsProps = result(
                     admin.createStream(
                         globalFlags.namespace,
-                        tableName,
+                        streamName,
                         StreamConfiguration.newBuilder(DEFAULT_STREAM_CONF)
-                            .setStorageType(StorageType.TABLE)
+                            .setStorageType(StorageType.STREAM)
                             .build()));
-                spec.console().println("Successfully created table '" + tableName + "':");
+                spec.console().println("Successfully created stream '" + streamName + "':");
                 spec.console().println(nsProps);
                 created = true;
             } catch (ClientException ce) {
-                // currently we don't return a right result code for table already exists. so let's double-check if
-                // table is already created.
+                // currently we don't return a right result code for stream already exists. so let's double check if
+                // stream is already created
                 try {
                     result(admin.getStream(
                         globalFlags.namespace,
-                        tableName
+                        streamName
                     ));
-                    spec.console().println("Table '" + tableName + "' already exists");
+                    spec.console().println("Stream '" + streamName + "' already exists");
                     created = true;
                 } catch (StreamNotFoundException snfe) {
-                    // stream not found, retry it again.
+                    // stream not found, retry it again
                 }
             }
         }

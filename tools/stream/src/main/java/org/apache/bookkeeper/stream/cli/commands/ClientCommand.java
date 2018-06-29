@@ -26,6 +26,7 @@ import org.apache.bookkeeper.clients.config.StorageClientSettings;
 import org.apache.bookkeeper.common.net.ServiceURI;
 import org.apache.bookkeeper.tools.common.BKCommand;
 import org.apache.bookkeeper.tools.common.BKFlags;
+import org.apache.bookkeeper.tools.framework.Cli;
 import org.apache.bookkeeper.tools.framework.CliFlags;
 import org.apache.bookkeeper.tools.framework.CliSpec;
 import org.apache.commons.configuration.CompositeConfiguration;
@@ -58,11 +59,18 @@ public abstract class ClientCommand<ClientFlagsT extends CliFlags> extends BKCom
             .withSettings(settings)
             .withNamespace(globalFlags.namespace)
             .build()) {
+            log.info("Successfully open a storage client at namespace '{}'", globalFlags.namespace);
             run(client, cmdFlags);
             return true;
+        } catch (IllegalArgumentException iae) {
+            spec.console().println("Illegal arguments to run command '"
+                + spec.parent() + " " + spec.name() + "' : " + iae.getMessage());
+            Cli.printUsage(spec);
+            return false;
         } catch (Exception e) {
-            log.error("Failed to process commands under namespace '{}'",
-                globalFlags.namespace, e);
+            spec.console().println("Failed to process command '"
+                + spec.parent() + " " + spec.name() + "': arguments = " + cmdFlags.arguments);
+            e.printStackTrace(spec.console());
             return false;
         }
     }
