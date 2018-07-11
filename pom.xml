@@ -66,6 +66,7 @@
     <module>microbenchmarks</module>
     <module>stream/distributedlog</module>
     <module>tools</module>
+    <module>examples</module>
   </modules>
   <mailingLists>
     <mailingList>
