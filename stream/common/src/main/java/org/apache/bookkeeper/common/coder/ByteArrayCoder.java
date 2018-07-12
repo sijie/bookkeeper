@@ -29,6 +29,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class ByteArrayCoder implements Coder<byte[]> {
 
+    private static final long serialVersionUID = 4394152634491445541L;
+
     public static ByteArrayCoder of() {
         return INSTANCE;
     }
@@ -52,6 +54,13 @@ public class ByteArrayCoder implements Coder<byte[]> {
 
     @Override
     public byte[] decode(ByteBuf data) {
-        return ByteBufUtil.getBytes(data);
+        byte[] decodedData = ByteBufUtil.getBytes(data);
+        data.readerIndex(data.writerIndex());
+        return decodedData;
+    }
+
+    @Override
+    public boolean isLengthRequiredOnNestedContext() {
+        return true;
     }
 }

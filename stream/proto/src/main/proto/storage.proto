@@ -35,6 +35,8 @@ enum StatusCode {
 
     // 4xx: client errors
     BAD_REQUEST                 = 400;
+    ILLEGAL_OP                  = 403;
+    INVALID_ARGUMENT            = 412;
 
     // 5xx: server errors
     INTERNAL_SERVER_ERROR       = 500;
@@ -46,6 +48,22 @@ enum StatusCode {
     // 9xx: revisions, versions 
     BAD_VERSION                 = 900;
     BAD_REVISION                = 901;
+    SMALLER_REVISION            = 902;
+
+    // STREAM RANGE related
+
+    // 10xx: STREAM RANGE write related
+    CONDITIONAL_WRITE_FAILURE   = 1000;
+    STREAM_RANGE_FENCED         = 1001;
+    WRITE_CANCELLED             = 1002;
+    WRITE_TIMEOUT               = 1003;
+
+    // 11xx: STREAM RANGE read related
+    END_OF_STREAM_RANGE         = 1100;
+
+    // 12xx: Event related
+    INVALID_EVENT               = 1200;
+    INVALID_EVENT_SET           = 1201;
 
     // ROOT and META RANGE related
 
@@ -61,6 +79,16 @@ enum StatusCode {
     INVALID_STREAMSNAPSHOT_NAME = 2103;
     STREAMSNAPSHOT_EXISTS       = 2104;
     STREAMSNAPSHOT_NOT_FOUND    = 2105;
+    END_OF_STREAM               = 2106;
+
+    // 22xx: Reader
+    INVALID_READGROUP_NAME      = 2200;
+    READGROUP_EXISTS            = 2201;
+    READGROUP_NOT_FOUND         = 2202;
+    INVALID_READER_NAME         = 2203;
+    READER_EXISTS               = 2204;
+    READER_NOT_FOUND            = 2205;
+    READER_REINIT_REQUIRED      = 2206;
 
     // 3xxx: GROUP related
     WRONG_GROUP_LOCATION        = 3000;
@@ -73,6 +101,106 @@ enum StatusCode {
     INVALID_KEY                 = 6000;
     KEY_EXISTS                  = 6001;
     KEY_NOT_FOUND               = 6002;
+}
+
+//
+// Stream Service
+//
+
+message SetupWriterRequest {
+    int64 stream_id     = 1;
+    int64 range_id      = 2;
+    string writer_name  = 3;
+}
+
+message SetupWriterResponse {
+    int64 writer_id         = 1;
+    int64 last_event_set_id = 2;
+}
+
+message WriteEventSetRequest {
+    int64 event_set_id                  = 1;
+    // conditional write
+    int64 expected_range_id             = 2;
+    oneof expected_position {
+        int64 expected_range_offset         = 3;
+        int64 expected_range_seq_num        = 4;
+    }
+
+    // data (put the data payload at the end of the request)
+    bytes data                          = 999;
+}
+
+message WriteEventSetResponse {
+    int64 event_set_id                  = 1;
+    // result
+    int64 range_id                      = 2;
+    int64 range_offset                  = 3;
+    int64 range_seq_num                 = 4;
+}
+
+message WriteRequest {
+    oneof req {
+        SetupWriterRequest setup_req    = 10;
+        WriteEventSetRequest write_req  = 11;
+    }
+}
+
+message WriteResponse {
+    StatusCode code                         = 1;
+    oneof resp {
+        SetupWriterResponse setup_resp      = 10;
+        WriteEventSetResponse write_resp    = 11;
+    }
+}
+
+message SetupReaderRequest {
+    int64 stream_id             = 1;
+    int64 range_id              = 2;
+    int32 read_session_id       = 3;
+    // start position
+    int64 range_offset          = 10;
+    int64 range_seq_num         = 11;
+}
+
+message SetupReaderResponse {
+}
+
+message ReadEventSetRequest {
+    int64 max_num_bytes         = 1;
+}
+
+message ReadEventSetResponse {
+    int64 range_id              = 1;
+    int64 range_offset          = 2;
+    int64 range_seq_num         = 3;
+
+    // data (put the data payload at the end of the response)
+    bytes data                  = 999;
+}
+
+message ReadRequest {
+    oneof req {
+        SetupReaderRequest setup_req    = 10;
+        ReadEventSetRequest read_req    = 11;
+    }
+}
+
+message ReadResponse {
+    StatusCode code                     = 1;
+    int32 read_session_id               = 2;
+    oneof resp {
+        SetupReaderResponse setup_resp  = 10;
+        ReadEventSetResponse read_resp  = 11;
+    }
+}
+
+service WriteService {
+    rpc Write(stream WriteRequest) returns (stream WriteResponse);
+}
+
+service ReadService {
+    rpc Read(stream ReadRequest) returns (stream ReadResponse);
 }
 
 //

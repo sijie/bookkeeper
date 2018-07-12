@@ -25,6 +25,53 @@ option java_multiple_files = true;
 option java_package = "org.apache.bookkeeper.stream.proto";
 
 //
+// Event Set
+//
+
+// The compression codec supported in distributedlog.
+enum CompressionCodecType {
+    NONE        = 0;
+    LZ4         = 1;
+}
+
+// The format version for EventSet
+enum EventSetFormatVersion {
+    V0  = 0;
+}
+
+// The format type. Currently we only support customized row based format
+// In future, we can think of support columnar based format like Apache Arrow.
+enum EventSetFormatType {
+    ROW         = 0;
+}
+
+// The type of the event set.
+enum EventSetType {
+    DATA        = 0;
+    CTRL        = 1;
+}
+
+//
+// Positions
+//
+
+message RangePosition {
+    int64 range_id  = 1;
+    int64 offset    = 2;
+    int64 seq_num   = 3;
+    int32 slot_id   = 4;
+}
+
+message StreamPosition {
+    int64 stream_id                         = 1;
+    repeated RangePosition range_positions  = 2;
+}
+
+message ReadPosition {
+    repeated stream.StreamPosition stream_positions = 1;
+}
+
+//
 // Range
 //
 

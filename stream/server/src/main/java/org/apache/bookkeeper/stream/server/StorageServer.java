@@ -261,7 +261,7 @@ public class StorageServer {
                 return StorageContainerPlacementPolicyImpl.of((int) numStorageContainers);
             })
             // the default log backend uri
-            .withDefaultBackendUri(dlNamespaceProvider.getDlogUri())
+            .withDlogNamespaceProvider(dlNamespaceProvider)
             // with zk-based storage container manager
             .withStorageContainerManagerFactory((storeConf, registry) ->
                 new ZkStorageContainerManager(
@@ -288,6 +288,7 @@ public class StorageServer {
         StatsLogger rpcStatsLogger = rootStatsLogger.scope("grpc");
         GrpcServerSpec serverSpec = GrpcServerSpec.builder()
             .storeSupplier(storageService)
+            .storageResources(storageResources)
             .storeServerConf(serverConf)
             .endpoint(myEndpoint)
             .statsLogger(rpcStatsLogger)

@@ -36,6 +36,8 @@ import org.apache.bookkeeper.stream.proto.kv.store.KeyMeta;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 final class MVCCRecordCoder implements Coder<MVCCRecord> {
 
+    private static final long serialVersionUID = 8346643385984651599L;
+
     public static MVCCRecordCoder of() {
         return INSTANCE;
     }
@@ -103,26 +105,30 @@ final class MVCCRecordCoder implements Coder<MVCCRecord> {
 
     @Override
     public MVCCRecord decode(ByteBuf data) {
-        ByteBuf copy = data.slice();
-
-        int metaLen = copy.readInt();
-        ByteBuffer metaBuf = copy.slice(copy.readerIndex(), metaLen).nioBuffer();
+        int metaLen = data.readInt();
+        ByteBuffer metaBuf = data.slice(data.readerIndex(), metaLen).nioBuffer();
         KeyMeta meta;
         try {
             meta = KeyMeta.parseFrom(metaBuf);
         } catch (InvalidProtocolBufferException e) {
             throw new StateStoreRuntimeException("Failed to deserialize key metadata", e);
         }
-        copy.skipBytes(metaLen);
-        int valLen = copy.readInt();
-        ByteBuf valBuf = copy.retainedSlice(copy.readerIndex(), valLen);
+        data.skipBytes(metaLen);
+        int valLen = data.readInt();
+        ByteBuf valBuf = data.retainedSlice(data.readerIndex(), valLen);
 
         MVCCRecord record = MVCCRecord.newRecord();
         record.setCreateRev(meta.getCreateRevision());
         record.setModRev(meta.getModRevision());
         record.setVersion(meta.getVersion());
         record.setValue(valBuf, meta.getValueType());
+        data.skipBytes(valLen);
         return record;
+    }
+
+    @Override
+    public boolean isLengthRequiredOnNestedContext() {
+        return true;
     }
 
 

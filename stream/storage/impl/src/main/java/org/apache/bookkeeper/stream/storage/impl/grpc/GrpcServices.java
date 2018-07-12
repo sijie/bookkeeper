@@ -21,6 +21,7 @@ package org.apache.bookkeeper.stream.storage.impl.grpc;
 import com.google.common.collect.Lists;
 import io.grpc.ServerServiceDefinition;
 import java.util.Collection;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stream.storage.api.metadata.RangeStoreService;
 
 /**
@@ -36,11 +37,14 @@ public final class GrpcServices {
      * @param store range store.
      * @return the list of grpc services should be associated with the range store.
      */
-    public static Collection<ServerServiceDefinition> create(RangeStoreService store) {
+    public static Collection<ServerServiceDefinition> create(RangeStoreService store,
+                                                             OrderedScheduler scheduler) {
         return Lists.newArrayList(
             new GrpcRootRangeService(store).bindService(),
             new GrpcMetaRangeService(store).bindService(),
-            new GrpcTableService(store).bindService());
+            new GrpcTableService(store).bindService(),
+            new GrpcStreamWriteService(store, scheduler).bindService(),
+            new GrpcStreamReadService(store).bindService());
     }
 
 }

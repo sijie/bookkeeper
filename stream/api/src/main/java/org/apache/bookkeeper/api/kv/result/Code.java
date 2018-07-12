@@ -18,26 +18,33 @@
 
 package org.apache.bookkeeper.api.kv.result;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-
 /**
  * Status Code.
  */
-@RequiredArgsConstructor
-@Getter
 public enum Code {
 
-    OK(0),
-    INTERNAL_ERROR(-1),
-    INVALID_ARGUMENT(-2),
-    ILLEGAL_OP(-3),
-    UNEXPECTED(-4),
-    BAD_REVISION(-5),
-    SMALLER_REVISION(-6),
-    KEY_NOT_FOUND(-7),
-    KEY_EXISTS(-8);
+    OK(org.apache.bookkeeper.api.Code.OK),
+    INTERNAL_ERROR(org.apache.bookkeeper.api.Code.INTERNAL_ERROR),
+    INVALID_ARGUMENT(org.apache.bookkeeper.api.Code.INVALID_ARGUMENT),
+    ILLEGAL_OP(org.apache.bookkeeper.api.Code.ILLEGAL_OP),
+    UNEXPECTED(org.apache.bookkeeper.api.Code.UNEXPECTED),
+    BAD_REVISION(org.apache.bookkeeper.api.Code.BAD_REVISION),
+    SMALLER_REVISION(org.apache.bookkeeper.api.Code.SMALLER_REVISION),
+    KEY_NOT_FOUND(org.apache.bookkeeper.api.Code.KEY_NOT_FOUND),
+    KEY_EXISTS(org.apache.bookkeeper.api.Code.KEY_EXISTS);
 
-    private final int code;
+    private final org.apache.bookkeeper.api.Code code;
+
+    Code(org.apache.bookkeeper.api.Code code) {
+        this.code = code;
+    }
+
+    int getCode() {
+        return code.getCode();
+    }
+
+    org.apache.bookkeeper.api.Code code() {
+        return code;
+    }
 
 }

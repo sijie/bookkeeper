@@ -1,0 +1,127 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+syntax = "proto3";
+
+import "stream.proto";
+
+package bookkeeper.proto.stream.readgroup;
+
+option java_multiple_files = true;
+option java_package = "org.apache.bookkeeper.stream.proto.readgroup";
+
+message ReadGroupState {
+    repeated stream.StreamPosition stream_positions = 1;
+}
+
+message AddReaderCommand {
+}
+
+message RemoveReaderCommand {
+    stream.ReadPosition read_pos        = 1;
+}
+
+message UpdatePositionCommand {
+    stream.ReadPosition read_pos        = 1;
+}
+
+message ReleaseRangesCommand {
+    stream.ReadPosition read_pos        = 2;
+}
+
+message AcquireRangeCommand {
+    string reader_name                  = 1;
+    stream.ReadPosition read_pos        = 2;
+    int64 reader_revision               = 3;
+}
+
+message AcquireRangesCommand {
+    repeated AcquireRangeCommand commands = 1;
+}
+
+message CompleteRangeCommand {
+    int64 stream_id                             = 1;
+    int64 range_Id                              = 2;
+    // the child ranges of current completed range and their parent ranges.
+    // we need this dependency tree to ensure a range can only be read
+    // after its parents are all already read
+    stream.ParentRangesList child_ranges        = 3;
+}
+
+message ReadGroupCommand {
+    enum Op {
+        NO_COMMAND      = 0;
+        ADD_READER      = 1;
+        REM_READER      = 2;
+        RELEASE_RANGE   = 3;
+        ACQUIRE_RANGE   = 4;
+        COMPLETE_RANGE  = 5;
+        UPDATE_POS      = 6;
+    }
+
+    Op op                       = 1;
+    int64 reader_revision       = 2; // used for CAS operation on updating state
+    int64 read_group_id         = 3;
+    string reader_name          = 4;
+    int64 lease_ttl_ms          = 5;
+    oneof command {
+        AddReaderCommand add_cmd                = 101;
+        RemoveReaderCommand remove_cmd          = 102;
+        ReleaseRangesCommand release_cmd        = 103;
+        AcquireRangesCommand acquire_cmd        = 104;
+        CompleteRangeCommand complete_cmd       = 105;
+        UpdatePositionCommand update_cmd        = 106;
+    }
+}
+
+message AcquireRangeAction {
+    stream.ReadPosition read_pos        = 1;
+}
+
+message ReleaseRangeAction {
+    repeated stream.RangeId ranges = 1;
+}
+
+message ReadGroupAction {
+    enum Code {
+        NO_ACTION        = 0;
+        READER_ADDED     = 1;
+        READER_EXISTS    = 2;
+        READER_REMOVED   = 3;
+        READER_NOT_FOUND = 4;
+        ACQUIRE_RANGE    = 5;
+        RELEASE_RANGE    = 6;
+        POSTION_UPDATED  = 7;
+        REINIT_REQUIRED  = 8;
+    }
+
+    Code code              = 1;
+    int64 reader_revision  = 2; // used for client to do CAS operation on updating state.
+
+    oneof action {
+        AcquireRangeAction acquire_action       = 101;
+        ReleaseRangeAction release_action       = 102;
+    }
+}
+
+message ReadGroupActions {
+    repeated ReadGroupAction actions = 1;
+}
+
+service ReadGroupService {
+    rpc Join(stream ReadGroupCommand) returns (stream ReadGroupAction);
+}

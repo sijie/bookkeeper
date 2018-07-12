@@ -67,6 +67,7 @@ import org.apache.bookkeeper.stream.storage.impl.kv.TableStoreFactory;
 import org.apache.bookkeeper.stream.storage.impl.metadata.MetaRangeStoreFactory;
 import org.apache.bookkeeper.stream.storage.impl.metadata.RootRangeStoreFactory;
 import org.apache.bookkeeper.stream.storage.impl.store.MVCCStoreFactory;
+import org.apache.distributedlog.api.namespace.Namespace;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -93,6 +94,7 @@ public class RangeStoreServiceImplTest {
     private MVCCAsyncStore<byte[], byte[]> mrMvccStore;
     private TableStore trStore;
     private MVCCAsyncStore<byte[], byte[]> trMvccStore;
+    private Namespace dlogNamespace;
 
     @SuppressWarnings("unchecked")
     @Before
@@ -105,6 +107,7 @@ public class RangeStoreServiceImplTest {
         this.rrStoreFactory = mock(RootRangeStoreFactory.class);
         this.mrStoreFactory = mock(MetaRangeStoreFactory.class);
         this.tableStoreFactory = mock(TableStoreFactory.class);
+        this.dlogNamespace = mock(Namespace.class);
 
         this.rrMvccStore = mock(MVCCAsyncStore.class);
         this.mrMvccStore = mock(MVCCAsyncStore.class);
@@ -114,6 +117,7 @@ public class RangeStoreServiceImplTest {
             SCID,
             scheduler,
             mvccStoreFactory,
+            () -> dlogNamespace,
             rrStoreFactory,
             mrStoreFactory,
             tableStoreFactory);
@@ -182,6 +186,7 @@ public class RangeStoreServiceImplTest {
             ROOT_STORAGE_CONTAINER_ID,
             scheduler,
             mvccStoreFactory,
+            () -> dlogNamespace,
             rrStoreFactory,
             mrStoreFactory,
             tableStoreFactory);

@@ -18,7 +18,6 @@
 
 package org.apache.bookkeeper.clients.impl.internal;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
@@ -90,8 +89,8 @@ public class StorageServerClientManagerImpl
         this.metaRangeClients = Maps.newConcurrentMap();
     }
 
-    @VisibleForTesting
-    StorageContainerChannelManager getStorageContainerChannelManager() {
+    @Override
+    public StorageContainerChannelManager getStorageContainerChannelManager() {
         return scChannelManager;
     }
 

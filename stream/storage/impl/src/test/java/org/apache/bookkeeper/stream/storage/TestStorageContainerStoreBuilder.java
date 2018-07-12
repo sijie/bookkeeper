@@ -17,12 +17,12 @@ package org.apache.bookkeeper.stream.storage;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 
-import java.net.URI;
 import org.apache.bookkeeper.stream.storage.api.StorageContainerStore;
 import org.apache.bookkeeper.stream.storage.api.sc.StorageContainerManagerFactory;
 import org.apache.bookkeeper.stream.storage.conf.StorageConfiguration;
 import org.apache.bookkeeper.stream.storage.impl.StorageContainerStoreImpl;
 import org.apache.bookkeeper.stream.storage.impl.store.MVCCStoreFactory;
+import org.apache.distributedlog.api.namespace.Namespace;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -32,7 +32,6 @@ import org.junit.Test;
 public class TestStorageContainerStoreBuilder {
 
     private MVCCStoreFactory storeFactory;
-    private final URI uri = URI.create("distributedlog://127.0.0.1/stream/storage");
 
     @Before
     public void setup() {
@@ -46,7 +45,7 @@ public class TestStorageContainerStoreBuilder {
             .withStorageContainerManagerFactory(mock(StorageContainerManagerFactory.class))
             .withStorageResources(StorageResources.create())
             .withRangeStoreFactory(storeFactory)
-            .withDefaultBackendUri(uri)
+            .withDlogNamespaceProvider(() -> mock(Namespace.class))
             .build();
     }
 
@@ -57,7 +56,7 @@ public class TestStorageContainerStoreBuilder {
             .withStorageContainerManagerFactory(mock(StorageContainerManagerFactory.class))
             .withStorageResources(null)
             .withRangeStoreFactory(storeFactory)
-            .withDefaultBackendUri(uri)
+            .withDlogNamespaceProvider(() -> mock(Namespace.class))
             .build();
     }
 
@@ -68,7 +67,7 @@ public class TestStorageContainerStoreBuilder {
             .withStorageContainerManagerFactory(null)
             .withStorageResources(StorageResources.create())
             .withRangeStoreFactory(storeFactory)
-            .withDefaultBackendUri(uri)
+            .withDlogNamespaceProvider(() -> mock(Namespace.class))
             .build();
     }
 
@@ -79,18 +78,17 @@ public class TestStorageContainerStoreBuilder {
             .withStorageContainerManagerFactory(mock(StorageContainerManagerFactory.class))
             .withStorageResources(StorageResources.create())
             .withRangeStoreFactory(null)
-            .withDefaultBackendUri(uri)
+            .withDlogNamespaceProvider(() -> mock(Namespace.class))
             .build();
     }
 
     @Test(expected = NullPointerException.class)
-    public void testBuildNullDefaultBackendUri() {
+    public void testBuildNullDlogNamespaceProvider() {
         StorageContainerStoreBuilder.newBuilder()
             .withStorageConfiguration(mock(StorageConfiguration.class))
             .withStorageContainerManagerFactory(mock(StorageContainerManagerFactory.class))
             .withStorageResources(StorageResources.create())
             .withRangeStoreFactory(storeFactory)
-            .withDefaultBackendUri(null)
             .build();
     }
 
@@ -101,7 +99,7 @@ public class TestStorageContainerStoreBuilder {
             .withStorageContainerManagerFactory(mock(StorageContainerManagerFactory.class))
             .withStorageResources(StorageResources.create())
             .withRangeStoreFactory(storeFactory)
-            .withDefaultBackendUri(uri)
+            .withDlogNamespaceProvider(() -> mock(Namespace.class))
             .build();
         assertTrue(storageContainerStore instanceof StorageContainerStoreImpl);
     }
