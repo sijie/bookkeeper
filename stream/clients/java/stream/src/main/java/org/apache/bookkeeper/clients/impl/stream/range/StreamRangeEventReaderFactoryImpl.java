@@ -19,13 +19,14 @@
 package org.apache.bookkeeper.clients.impl.stream.range;
 
 import org.apache.bookkeeper.api.stream.StreamConfig;
-import org.apache.bookkeeper.clients.impl.stream.event.EventSet;
 import org.apache.bookkeeper.clients.impl.stream.event.ReadEventsImpl;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stream.proto.RangePosition;
 import org.apache.bookkeeper.stream.proto.RangeProperties;
 import org.apache.bookkeeper.stream.proto.StreamProperties;
+import org.apache.bookkeeper.stream.protocol.EventSet;
 import org.apache.bookkeeper.stream.protocol.RangeId;
+
 
 /**
  * Default implementation of {@link StreamRangeEventReader}.

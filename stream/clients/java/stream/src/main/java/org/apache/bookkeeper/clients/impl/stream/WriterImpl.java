@@ -45,7 +45,6 @@ import org.apache.bookkeeper.clients.impl.internal.api.HashStreamRanges;
 import org.apache.bookkeeper.clients.impl.internal.api.MetaRangeClient;
 import org.apache.bookkeeper.clients.impl.internal.api.StorageServerClientManager;
 import org.apache.bookkeeper.clients.impl.routing.RangeRouter;
-import org.apache.bookkeeper.clients.impl.stream.event.EventSet;
 import org.apache.bookkeeper.clients.impl.stream.event.PendingEvent;
 import org.apache.bookkeeper.clients.impl.stream.event.PendingWrite;
 import org.apache.bookkeeper.clients.impl.stream.event.WriteEventBuilderImpl;
@@ -61,6 +60,7 @@ import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stream.proto.RangeProperties;
 import org.apache.bookkeeper.stream.proto.StreamProperties;
 import org.apache.bookkeeper.stream.proto.storage.StatusCode;
+import org.apache.bookkeeper.stream.protocol.EventSet;
 
 /**
  * A default implementation of {@link Writer}.

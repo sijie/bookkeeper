@@ -130,7 +130,8 @@ public class RegionAwareEnsemblePlacementPolicy extends RackawareEnsemblePlaceme
             if (null == perRegionPlacement.get(region)) {
                 perRegionPlacement.put(region, new RackawareEnsemblePlacementPolicy()
                         .initialize(dnsResolver, timer, this.reorderReadsRandom, this.stabilizePeriodSeconds,
-                                this.isWeighted, this.maxWeightMultiple, this.minNumRacksPerWriteQuorum, statsLogger)
+                                this.reorderThresholdPendingRequests, this.isWeighted, this.maxWeightMultiple,
+                                this.minNumRacksPerWriteQuorum, this.enforceMinNumRacksPerWriteQuorum, statsLogger)
                         .withDefaultRack(NetworkTopology.DEFAULT_REGION_AND_RACK));
             }
 
@@ -175,10 +176,11 @@ public class RegionAwareEnsemblePlacementPolicy extends RackawareEnsemblePlaceme
             // Regions are specified as
             // R1;R2;...
             String[] regions = regionsString.split(";");
-            for (String region: regions) {
+            for (String region : regions) {
                 perRegionPlacement.put(region, new RackawareEnsemblePlacementPolicy(true)
                         .initialize(dnsResolver, timer, this.reorderReadsRandom, this.stabilizePeriodSeconds,
-                                this.isWeighted, this.maxWeightMultiple, this.minNumRacksPerWriteQuorum, statsLogger)
+                                this.reorderThresholdPendingRequests, this.isWeighted, this.maxWeightMultiple,
+                                this.minNumRacksPerWriteQuorum, this.enforceMinNumRacksPerWriteQuorum, statsLogger)
                         .withDefaultRack(NetworkTopology.DEFAULT_REGION_AND_RACK));
             }
             minRegionsForDurability = conf.getInt(REPP_MINIMUM_REGIONS_FOR_DURABILITY,
@@ -500,7 +502,8 @@ public class RegionAwareEnsemblePlacementPolicy extends RackawareEnsemblePlaceme
                         bookieNodeToReplace.getNetworkLocation(),
                         excludeBookies,
                         TruePredicate.INSTANCE,
-                        EnsembleForReplacementWithNoConstraints.INSTANCE);
+                        EnsembleForReplacementWithNoConstraints.INSTANCE,
+                        true);
                 } catch (BKException.BKNotEnoughBookiesException e) {
                     LOG.warn("Failed to choose a bookie from {} : "
                             + "excluded {}, fallback to choose bookie randomly from the cluster.",
