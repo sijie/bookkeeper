@@ -30,6 +30,7 @@ import org.apache.bookkeeper.api.stream.WriteEvent;
 import org.apache.bookkeeper.api.stream.WriteEventBuilder;
 import org.apache.bookkeeper.clients.impl.stream.exceptions.InternalStreamRuntimeException;
 import org.apache.bookkeeper.stream.proto.storage.StatusCode;
+import org.apache.bookkeeper.stream.protocol.EventSet;
 
 /**
  * A pending event to a given stream.

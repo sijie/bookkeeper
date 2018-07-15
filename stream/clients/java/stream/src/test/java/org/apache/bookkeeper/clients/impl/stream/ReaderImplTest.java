@@ -61,7 +61,7 @@ import org.apache.bookkeeper.clients.impl.internal.api.RootRangeClient;
 import org.apache.bookkeeper.clients.impl.internal.api.StorageServerClientManager;
 import org.apache.bookkeeper.clients.impl.stream.ReaderImpl.State;
 import org.apache.bookkeeper.clients.impl.stream.event.EventPositionImpl;
-import org.apache.bookkeeper.clients.impl.stream.event.EventSet;
+import org.apache.bookkeeper.stream.protocol.EventSet;
 import org.apache.bookkeeper.clients.impl.stream.event.RangePositionImpl;
 import org.apache.bookkeeper.clients.impl.stream.event.ReadEventsImpl;
 import org.apache.bookkeeper.clients.impl.stream.event.ReadEventsImpl.Recycler;

@@ -39,13 +39,13 @@ import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import org.apache.bookkeeper.api.stream.ReadEvents;
-import org.apache.bookkeeper.clients.impl.stream.event.EventSet.ReaderBuilder;
 import org.apache.bookkeeper.clients.impl.stream.event.RangePositionImpl;
 import org.apache.bookkeeper.clients.impl.stream.event.ReadEventsImpl;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.common.util.AbstractAutoAsyncCloseable;
 import org.apache.bookkeeper.stream.proto.RangePosition;
 import org.apache.bookkeeper.stream.proto.RangeProperties;
+import org.apache.bookkeeper.stream.protocol.EventSet.ReaderBuilder;
 import org.apache.bookkeeper.stream.protocol.RangeId;
 
 /**

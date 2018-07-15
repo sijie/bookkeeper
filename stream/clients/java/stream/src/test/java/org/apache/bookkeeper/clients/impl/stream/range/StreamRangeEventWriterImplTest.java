@@ -44,7 +44,7 @@ import org.apache.bookkeeper.api.stream.WriteEventBuilder;
 import org.apache.bookkeeper.clients.grpc.GrpcClientTestBase;
 import org.apache.bookkeeper.clients.impl.channel.StorageServerChannel;
 import org.apache.bookkeeper.clients.impl.stream.event.EventPositionImpl;
-import org.apache.bookkeeper.clients.impl.stream.event.EventSet;
+import org.apache.bookkeeper.stream.protocol.EventSet;
 import org.apache.bookkeeper.clients.impl.stream.event.PendingWrite;
 import org.apache.bookkeeper.clients.impl.stream.event.WriteEventBuilderImpl;
 import org.apache.bookkeeper.clients.impl.stream.exceptions.InternalStreamException;

@@ -20,12 +20,12 @@ package org.apache.bookkeeper.clients.impl.stream.range;
 
 import org.apache.bookkeeper.api.stream.StreamConfig;
 import org.apache.bookkeeper.api.stream.WriterConfig;
-import org.apache.bookkeeper.clients.impl.stream.event.EventSet;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stream.proto.CompressionCodecType;
 import org.apache.bookkeeper.stream.proto.EventSetType;
 import org.apache.bookkeeper.stream.proto.RangeProperties;
 import org.apache.bookkeeper.stream.proto.StreamProperties;
+import org.apache.bookkeeper.stream.protocol.EventSet;
 
 /**
  * Default implementation of {@link StreamRangeEventWriter}.

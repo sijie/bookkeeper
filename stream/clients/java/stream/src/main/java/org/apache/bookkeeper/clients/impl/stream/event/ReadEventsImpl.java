@@ -26,6 +26,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import org.apache.bookkeeper.api.stream.ReadEvent;
 import org.apache.bookkeeper.api.stream.ReadEvents;
+import org.apache.bookkeeper.stream.protocol.EventSet;
 import org.apache.bookkeeper.stream.protocol.RangeId;
 
 /**

@@ -37,8 +37,6 @@ import javax.annotation.concurrent.GuardedBy;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.api.stream.Position;
 import org.apache.bookkeeper.api.stream.WriteEvent;
-import org.apache.bookkeeper.clients.impl.stream.event.EventSet;
-import org.apache.bookkeeper.clients.impl.stream.event.EventSet.WriterBuilder;
 import org.apache.bookkeeper.clients.impl.stream.event.PendingEventSet;
 import org.apache.bookkeeper.clients.impl.stream.event.PendingWrite;
 import org.apache.bookkeeper.clients.impl.stream.event.RangePositionImpl;
@@ -47,6 +45,8 @@ import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.common.util.AbstractAutoAsyncCloseable;
 import org.apache.bookkeeper.stream.proto.RangeProperties;
 import org.apache.bookkeeper.stream.proto.storage.StatusCode;
+import org.apache.bookkeeper.stream.protocol.EventSet;
+import org.apache.bookkeeper.stream.protocol.EventSet.WriterBuilder;
 import org.apache.bookkeeper.stream.protocol.RangeId;
 
 /**
